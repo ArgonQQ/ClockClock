@@ -23,8 +23,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-tags: true
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
 
       - name: Compute next version
         id: version
