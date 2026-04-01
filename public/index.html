@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClockClock</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <h1 class="logo-title logo-title-login"><svg class="logo-icon logo-icon-login" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><g class="knock-clock"><circle cx="32" cy="32" r="20" stroke="currentColor" stroke-width="2.5"/><circle cx="32" cy="32" r="2" fill="currentColor"/><line x1="32" y1="32" x2="32" y2="17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="32" y1="32" x2="42" y2="28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g><g class="knock-lines"><path d="M56 20 C59 24, 59 40, 56 44" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/><path d="M60 16 C64 22, 64 42, 60 48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.3"/><path d="M8 20 C5 24, 5 40, 8 44" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/><path d="M4 16 C0 22, 0 42, 4 48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.3"/></g></svg>ClockClock</h1>
+      <div class="login-lang">
+        <button onclick="setLang('en')" class="lang-btn" data-lang-btn="en">EN</button>
+        <button onclick="setLang('de')" class="lang-btn" data-lang-btn="de">DE</button>
+      </div>
+      <div id="login-local">
+        <input type="text" id="login-user" data-i18n-ph="loginUser" placeholder="Username" autocomplete="username">
+        <input type="password" id="login-pass" data-i18n-ph="loginPass" placeholder="Password" autocomplete="current-password">
+        <button id="login-btn" data-i18n="loginBtn" onclick="doLogin()">Login</button>
+      </div>
+      <div id="login-oidc" style="display:none">
+        <button data-i18n="loginOidc" onclick="doOidcLogin()">Login with SSO</button>
+      </div>
+      <p id="login-error" class="error"></p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" style="display:none">
+    <header>
+      <div class="header-left">
+        <h1 class="logo-title"><svg class="logo-icon" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><g class="knock-clock"><circle cx="32" cy="32" r="20" stroke="currentColor" stroke-width="2.5"/><circle cx="32" cy="32" r="2" fill="currentColor"/><line x1="32" y1="32" x2="32" y2="17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="32" y1="32" x2="42" y2="28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g><g class="knock-lines"><path d="M56 20 C59 24, 59 40, 56 44" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/><path d="M60 16 C64 22, 64 42, 60 48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.3"/><path d="M8 20 C5 24, 5 40, 8 44" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/><path d="M4 16 C0 22, 0 42, 4 48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.3"/></g></svg>ClockClock</h1>
+        <span id="user-info"></span>
+      </div>
+      <div class="header-right">
+        <button onclick="setLang('en')" class="lang-btn" data-lang-btn="en">EN</button>
+        <button onclick="setLang('de')" class="lang-btn" data-lang-btn="de">DE</button>
+        <button id="theme-toggle" onclick="toggleTheme()">🌙</button>
+        <button data-i18n="logout" onclick="doLogout()">Logout</button>
+      </div>
+    </header>
+
+    <nav id="tabs">
+      <button class="tab active" data-tab="tracker" data-i18n="tabTracker">Tracker</button>
+      <button class="tab" data-tab="entries" data-i18n="tabEntries">Entries</button>
+      <button class="tab" data-tab="reports" data-i18n="tabReports">Reports</button>
+      <button class="tab" data-tab="customers" data-i18n="tabCustomers">Customers</button>
+      <button class="tab" data-tab="users" data-i18n="tabUsers" id="tab-users" style="display:none">Users</button>
+    </nav>
+
+    <!-- Tracker Tab -->
+    <section id="panel-tracker" class="panel">
+      <div class="tracker-display">
+        <div id="timer-display" class="timer-big">00:00:00</div>
+        <div class="tracker-controls">
+          <button id="btn-start" data-i18n="start" onclick="timerStart()">Start</button>
+          <button id="btn-pause" data-i18n="pause" onclick="timerPause()" style="display:none">Pause</button>
+          <button id="btn-resume" data-i18n="resume" onclick="timerResume()" style="display:none">Resume</button>
+          <button id="btn-stop" data-i18n="stop" onclick="timerStop()" style="display:none">Stop</button>
+        </div>
+        <div class="tracker-fields">
+          <label data-i18n="customer">Customer</label>
+          <select id="track-customer">
+            <option value="" data-i18n="selectCustomer">Select customer</option>
+          </select>
+          <label data-i18n="description">Description</label>
+          <div class="desc-tags" id="desc-tags"></div>
+          <input type="text" id="track-desc" data-i18n-ph="descriptionPh" placeholder="What are you working on?">
+        </div>
+        <div class="tracker-extras">
+          <button id="btn-pip" onclick="openPiP()">📌 <span data-i18n="miniTimer">Mini Timer</span></button>
+          <label class="notify-label">
+            <input type="checkbox" id="chk-notify" onchange="toggleNotifications()">
+            <span data-i18n="notifications">Desktop Notifications</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Entries Tab -->
+    <section id="panel-entries" class="panel" style="display:none">
+      <div class="filters">
+        <select id="filter-customer">
+          <option value="" data-i18n="allCustomers">All Customers</option>
+        </select>
+        <select id="filter-date-range" onchange="onDateRangeChange()">
+          <option value="all" data-i18n="allTime">All Time</option>
+          <option value="today" data-i18n="today">Today</option>
+          <option value="week" data-i18n="thisWeek">This Week</option>
+          <option value="month" data-i18n="thisMonth">This Month</option>
+          <option value="custom" data-i18n="custom">Custom</option>
+        </select>
+        <div id="custom-dates" style="display:none">
+          <input type="date" id="filter-from">
+          <input type="date" id="filter-to">
+        </div>
+        <select id="filter-user" style="display:none">
+          <option value="" data-i18n="allUsers">All Users</option>
+        </select>
+        <button data-i18n="apply" onclick="loadEntries()">Apply</button>
+        <button data-i18n="exportCsv" onclick="exportCsv()">Export CSV</button>
+        <button data-i18n="addEntry" onclick="showAddEntry()">+ Add Entry</button>
+      </div>
+      <div class="table-wrap">
+        <table id="entries-table">
+          <thead>
+            <tr>
+              <th data-sort="customer_name" data-i18n="thCustomer">Customer</th>
+              <th data-sort="date" data-i18n="thDate">Date</th>
+              <th data-i18n="thFrom">From</th>
+              <th data-i18n="thTo">To</th>
+              <th data-sort="minutes" data-i18n="thMinutes">Minutes</th>
+              <th data-i18n="thDescription">Description</th>
+              <th data-i18n="thUser" id="th-user" style="display:none">User</th>
+              <th data-i18n="thActions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="entries-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Reports Tab -->
+    <section id="panel-reports" class="panel" style="display:none">
+      <div class="filters">
+        <select id="report-customer">
+          <option value="" data-i18n="allCustomers">All Customers</option>
+        </select>
+        <select id="report-date-range" onchange="onReportDateRangeChange()">
+          <option value="all" data-i18n="allTime">All Time</option>
+          <option value="today" data-i18n="today">Today</option>
+          <option value="week" data-i18n="thisWeek">This Week</option>
+          <option value="month" data-i18n="thisMonth">This Month</option>
+          <option value="custom" data-i18n="custom">Custom</option>
+        </select>
+        <div id="report-custom-dates" style="display:none">
+          <input type="date" id="report-from">
+          <input type="date" id="report-to">
+        </div>
+        <select id="report-user" style="display:none">
+          <option value="" data-i18n="allUsers">All Users</option>
+        </select>
+        <button data-i18n="apply" onclick="loadReports()">Apply</button>
+        <button data-i18n="exportPdf" onclick="exportReportPdf()">Export PDF</button>
+      </div>
+      <div class="report-cards">
+        <div class="card"><div class="card-value" id="rpt-total">0</div><div class="card-label" data-i18n="totalEntries">Total Entries</div></div>
+        <div class="card"><div class="card-value" id="rpt-minutes">0</div><div class="card-label" data-i18n="totalMinutes">Total Minutes</div></div>
+        <div class="card"><div class="card-value" id="rpt-hours">0.0</div><div class="card-label" data-i18n="totalHours">Total Hours</div></div>
+      </div>
+      <div class="table-wrap">
+        <table id="report-table">
+          <thead>
+            <tr>
+              <th data-i18n="thCustomer">Customer</th>
+              <th data-i18n="thEntries">Entries</th>
+              <th data-i18n="thMinutes">Minutes</th>
+              <th data-i18n="thHours">Hours</th>
+            </tr>
+          </thead>
+          <tbody id="report-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Customers Tab -->
+    <section id="panel-customers" class="panel" style="display:none">
+      <div class="users-toolbar">
+        <button data-i18n="addCustomer" onclick="showAddCustomer()">Add Customer</button>
+      </div>
+      <div class="table-wrap">
+        <table id="customers-table">
+          <thead>
+            <tr>
+              <th data-i18n="customerName">Name</th>
+              <th data-i18n="contactPerson">Contact</th>
+              <th data-i18n="email">Email</th>
+              <th data-i18n="phone">Phone</th>
+              <th data-i18n="city">City</th>
+              <th data-i18n="thActions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="customers-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Users Tab (admin) -->
+    <section id="panel-users" class="panel" style="display:none">
+      <div class="users-toolbar">
+        <button data-i18n="addUser" onclick="showAddUser()">Add User</button>
+      </div>
+      <div class="table-wrap">
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th data-i18n="thUsername">Username</th>
+              <th data-i18n="thRole">Role</th>
+              <th data-i18n="thCreated">Created</th>
+              <th data-i18n="thActions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Save Modal -->
+  <div id="save-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 data-i18n="saveEntry">Save Entry</h2>
+      <label data-i18n="customer">Customer</label>
+      <select id="save-customer"></select>
+      <label data-i18n="sections" class="save-sections-label">Sections</label>
+      <div id="save-sections" class="save-sections"></div>
+      <div class="modal-info">
+        <span data-i18n="total">Total</span>: <span id="save-total-info"></span>
+      </div>
+      <div class="modal-actions">
+        <button data-i18n="save" onclick="confirmSave()">Save</button>
+        <button data-i18n="discard" onclick="discardSave()" class="btn-secondary">Discard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Modal -->
+  <div id="user-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 id="user-modal-title" data-i18n="addUser">Add User</h2>
+      <label data-i18n="thUsername">Username</label>
+      <input type="text" id="modal-username">
+      <label data-i18n="password">Password</label>
+      <input type="password" id="modal-password">
+      <label data-i18n="thRole">Role</label>
+      <select id="modal-role">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+      <div class="modal-actions">
+        <button data-i18n="save" onclick="saveUser()">Save</button>
+        <button data-i18n="cancel" onclick="closeUserModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Entry Modal -->
+  <div id="add-entry-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 data-i18n="addEntry">Add Entry</h2>
+      <label data-i18n="customer">Customer</label>
+      <select id="add-entry-customer"></select>
+      <label data-i18n="description">Description</label>
+      <input type="text" id="add-entry-desc" data-i18n-ph="descriptionPh" placeholder="What did you work on?">
+      <label data-i18n="thDate">Date</label>
+      <input type="date" id="add-entry-date">
+      <div class="add-entry-time-row">
+        <div class="add-entry-time-field">
+          <label data-i18n="thFrom">From</label>
+          <input type="time" id="add-entry-from">
+        </div>
+        <div class="add-entry-time-field">
+          <label data-i18n="thTo">To</label>
+          <input type="time" id="add-entry-to">
+        </div>
+      </div>
+      <div class="modal-info" id="add-entry-duration"></div>
+      <div class="modal-actions">
+        <button data-i18n="save" onclick="saveManualEntry()">Save</button>
+        <button data-i18n="cancel" onclick="closeAddEntry()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer Modal -->
+  <div id="customer-modal" class="modal" style="display:none">
+    <div class="modal-content modal-wide">
+      <h2 id="customer-modal-title" data-i18n="addCustomer">Add Customer</h2>
+      <label data-i18n="customerName">Name</label>
+      <input type="text" id="cust-name">
+      <div class="modal-row">
+        <div class="modal-col">
+          <label data-i18n="contactPerson">Contact Person</label>
+          <input type="text" id="cust-contact">
+        </div>
+        <div class="modal-col">
+          <label data-i18n="email">Email</label>
+          <input type="email" id="cust-email">
+        </div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-col">
+          <label data-i18n="phone">Phone</label>
+          <input type="tel" id="cust-phone">
+        </div>
+        <div class="modal-col">
+          <label data-i18n="country">Country</label>
+          <input type="text" id="cust-country">
+        </div>
+      </div>
+      <label data-i18n="address">Address</label>
+      <input type="text" id="cust-address">
+      <div class="modal-row">
+        <div class="modal-col">
+          <label data-i18n="zip">ZIP</label>
+          <input type="text" id="cust-zip">
+        </div>
+        <div class="modal-col">
+          <label data-i18n="city">City</label>
+          <input type="text" id="cust-city">
+        </div>
+      </div>
+      <label data-i18n="notes">Notes</label>
+      <textarea id="cust-notes" rows="2"></textarea>
+      <div class="modal-actions">
+        <button data-i18n="save" onclick="saveCustomer()">Save</button>
+        <button data-i18n="cancel" onclick="closeCustomerModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

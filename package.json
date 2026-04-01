@@ -1,0 +1,14 @@
+{
+  "name": "timetracker",
+  "version": "1.0.0",
+  "description": "Time Tracker with SQLite, auth, i18n, PiP mini timer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "express-session": "^1.18.0",
+    "better-sqlite3": "^11.6.0"
+  }
+}
