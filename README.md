@@ -1,11 +1,12 @@
-# ClockClock
+# ClockClock — Self-Hosted Time Tracker
 
 [![Docker Image Version](https://img.shields.io/docker/v/argonqq/clockclock/latest?label=docker%20hub)](https://hub.docker.com/r/argonqq/clockclock)
 [![GitHub Tag](https://img.shields.io/github/v/tag/ArgonQQ/ClockClock)](https://github.com/ArgonQQ/ClockClock/tags)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Simple, self-hosted time tracking for freelancers and small teams.**
+**Open source time tracking for freelancers, agencies, and small teams — self-hosted, Docker-ready, no subscriptions.**
 
-Track billable hours across clients, export reports, and stay on top of your work — all from a clean web interface with no external services required.
+ClockClock is a lightweight self-hosted time tracking app that lets you log billable hours against clients, generate reports, and export timesheets — all from a clean web UI running entirely on your own infrastructure. No cloud accounts, no per-seat pricing, no data leaving your server.
 
 ---
 
@@ -14,34 +15,34 @@ Track billable hours across clients, export reports, and stay on top of your wor
 <table>
   <tr>
     <td align="center" width="33%">
-      <img src="img/login.png" width="260" alt="Login"/><br/>
+      <img src="img/login.png" width="260" alt="ClockClock login screen"/><br/>
       <b>Login</b><br/>
       <sub>Clean login screen with EN/DE language switcher. Supports local auth and OIDC/SSO. Login attempts are rate-limited.</sub>
     </td>
     <td align="center" width="33%">
-      <img src="img/tracker.png" width="260" alt="Tracker"/><br/>
+      <img src="img/tracker.png" width="260" alt="ClockClock time tracker"/><br/>
       <b>Tracker</b><br/>
       <sub>Main timer view. Assign a customer, add a description, and start tracking. Timer survives page reloads via local storage. Includes a picture-in-picture mini window and optional desktop notifications.</sub>
     </td>
     <td align="center" width="33%">
-      <img src="img/entries.png" width="260" alt="Entries"/><br/>
+      <img src="img/entries.png" width="260" alt="ClockClock time entries log"/><br/>
       <b>Entries</b><br/>
       <sub>Full log of all time entries. Filter by customer, date range, or user. Admins see everyone's entries; users see only their own. Export to CSV or add entries manually.</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="33%">
-      <img src="img/reports.png" width="260" alt="Reports"/><br/>
+      <img src="img/reports.png" width="260" alt="ClockClock time reports"/><br/>
       <b>Reports</b><br/>
       <sub>Aggregated summary showing total entries, minutes, and hours with a per-customer breakdown. Apply the same filters as Entries and export the result as a PDF.</sub>
     </td>
     <td align="center" width="33%">
-      <img src="img/customers.png" width="260" alt="Customers"/><br/>
+      <img src="img/customers.png" width="260" alt="ClockClock customer management"/><br/>
       <b>Customers</b><br/>
       <sub>Manage your client list with full contact details (name, email, phone, address, notes). Each user manages their own customers; admins can view and edit across the whole team.</sub>
     </td>
     <td align="center" width="33%">
-      <img src="img/users.png" width="260" alt="Users"/><br/>
+      <img src="img/users.png" width="260" alt="ClockClock user management"/><br/>
       <b>Users <i>(admin only)</i></b><br/>
       <sub>Create and manage team members, assign admin or user roles, and reset passwords. Regular users cannot access this panel.</sub>
     </td>
@@ -50,23 +51,33 @@ Track billable hours across clients, export reports, and stay on top of your wor
 
 ---
 
+## Why ClockClock?
+
+Most time tracking tools are SaaS with monthly fees, data stored on someone else's servers, and features you'll never use. ClockClock is the opposite — a single Docker container, a single SQLite file, and everything you actually need to track billable hours and invoice clients.
+
+- **No subscription** — run it yourself, own your data
+- **No setup complexity** — one `docker run` command and you're live
+- **No bloat** — under 3,000 lines of code, zero frontend frameworks
+
+---
+
 ## Features
 
-- **Live timer** with pause/resume, local-storage recovery, and picture-in-picture mini window
-- **Multi-customer** time entries with filtering by customer, date range, and user
-- **Reports** with per-customer breakdowns, CSV export, and PDF export
-- **Customer management** with full contact details and per-user data isolation
-- **Role-based access** — admins see all data; users see only their own
-- **OIDC / SSO** support for team SSO with group-based role assignment
-- **Bilingual** — English and German, switchable at runtime without a page reload
-- **Light & dark theme** with persistent preference
-- **Zero build step** — vanilla JS frontend, served directly from Express
+- **Live timer** — start, pause, resume, with picture-in-picture mini window and desktop notifications
+- **Billable hours tracking** — log time entries against customers with descriptions and time ranges
+- **Timesheet reports** — per-customer breakdowns with CSV and PDF export
+- **Client management** — full contact details, notes, per-user data isolation
+- **Multi-user support** — role-based access control (admin and user roles)
+- **SSO / OIDC** — integrate with Keycloak, Authentik, Azure AD, or any OIDC provider
+- **English & German** — language switcher with no page reload
+- **Dark and light theme** — persistent per-user preference
+- **Self-contained** — SQLite database, no external services required
 
 ---
 
 ## Quick Start
 
-### Docker (recommended)
+### Docker
 
 ```bash
 docker run -d \
@@ -79,11 +90,30 @@ docker run -d \
 
 Open [http://localhost:3000](http://localhost:3000) and log in with `admin` / `changeme`.
 
-The `/app/data` volume holds the SQLite database. As long as the volume persists, your data survives container restarts and image upgrades.
+The `/app/data` volume holds the SQLite database. Your data survives container restarts and image upgrades as long as the volume persists.
 
 > **First run:** If `ADMIN_PASSWORD` is not set, a random password is generated and printed to the container logs (`docker logs clockclock`).
 
-### Manual
+### Docker Compose
+
+```yaml
+services:
+  clockclock:
+    image: argonqq/clockclock:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - clockclock-data:/app/data
+    environment:
+      SESSION_SECRET: change-me-to-a-long-random-string
+      ADMIN_PASSWORD: changeme
+    restart: unless-stopped
+
+volumes:
+  clockclock-data:
+```
+
+### Manual (Node.js)
 
 ```bash
 git clone https://github.com/ArgonQQ/ClockClock.git
@@ -106,11 +136,11 @@ All configuration is via environment variables. Copy `.env.example` to `.env` to
 | `DB_PATH` | `data/timetracker.db` | Path to the SQLite database file |
 | `AUTH_MODE` | `local` | Authentication mode: `local` or `oidc` |
 | `ADMIN_USER` | `admin` | Username of the default admin account |
-| `ADMIN_PASSWORD` | *(generated)* | Password for the default admin account — printed to stdout on first run if not set |
+| `ADMIN_PASSWORD` | *(generated)* | Password for the default admin — printed to stdout on first run if not set |
 
 ### OIDC / SSO
 
-Set `AUTH_MODE=oidc` and provide the following additional variables:
+Set `AUTH_MODE=oidc` to enable single sign-on. Compatible with Keycloak, Authentik, Azure AD, and any standard OIDC provider.
 
 | Variable | Description |
 |---|---|
@@ -124,30 +154,9 @@ Set `AUTH_MODE=oidc` and provide the following additional variables:
 
 ---
 
-## Docker Compose
-
-```yaml
-services:
-  clockclock:
-    image: argonqq/clockclock:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - clockclock-data:/app/data
-    environment:
-      SESSION_SECRET: change-me-to-a-long-random-string
-      ADMIN_PASSWORD: changeme
-    restart: unless-stopped
-
-volumes:
-  clockclock-data:
-```
-
----
-
 ## Development & Testing
 
-### Running tests
+### Running the test suite
 
 `test.sh` is a shell-based integration test suite that verifies authentication, authorization, and data isolation against a live server. It requires only `curl` and `sh`.
 
@@ -155,7 +164,7 @@ volumes:
 # Run against the local server (make sure it's running first)
 ./test.sh
 
-# Run against a specific URL
+# Run against a remote server
 ./test.sh http://your-server:3000
 ```
 
@@ -166,8 +175,6 @@ The suite covers:
 - **Customer isolation** — users can only see and edit their own customers; admins can see all
 - **Entry isolation** — users can only see and edit their own entries; admins can see all
 - **Referential integrity** — customers with associated entries cannot be deleted
-
-Passing output looks like:
 
 ```
 ClockClock Test Suite
@@ -186,30 +193,34 @@ Auth
 
 ### Seeding demo data
 
-To populate the app with realistic demo data (3 users, 6 customers, 28 time entries) for development or a live demo:
+Populate the app with realistic demo data (3 users, 6 customers, 28 time entries) for local development or a live demo:
 
 ```bash
-# Seed against the local server
 ADMIN_PASSWORD=changeme ./test.sh seed
 
-# Seed against a specific URL
+# Against a remote server
 ADMIN_PASSWORD=changeme ./test.sh seed http://your-server:3000
 ```
 
-This creates:
-- `admin` — two customers (Hofmann Metallbau GmbH, Lindgren & Partners)
-- `sarah.mueller` / `sarah2026` — two customers (Café Morgenrot, Dr. Petersen Zahnarztpraxis)
-- `tom.brenner` / `tom2026` — two customers (Vinotek GmbH, Nowak Transport Sp. z o.o.)
+This creates three users with pre-loaded time entries across six clients:
 
-Each user has several weeks of realistic time entries you can filter, report on, and export.
+| User | Password | Clients |
+|---|---|---|
+| `admin` | *(your ADMIN_PASSWORD)* | Hofmann Metallbau GmbH, Lindgren & Partners |
+| `sarah.mueller` | `sarah2026` | Café Morgenrot, Dr. Petersen Zahnarztpraxis |
+| `tom.brenner` | `tom2026` | Vinotek GmbH, Nowak Transport Sp. z o.o. |
 
 ---
 
 ## Tech Stack
 
-- **Backend** — Node.js, Express, SQLite (via `better-sqlite3`)
-- **Frontend** — Vanilla JavaScript, HTML, CSS — no build step, no framework
-- **Auth** — Scrypt password hashing, server-side session cookies, optional OIDC
+| Layer | Technology |
+|---|---|
+| Backend | Node.js, Express |
+| Database | SQLite via `better-sqlite3` |
+| Frontend | Vanilla JavaScript, HTML, CSS — no build step |
+| Auth | Scrypt password hashing, server-side sessions, OIDC |
+| Container | Docker, multi-arch (linux/amd64, linux/arm64) |
 
 ---
 
