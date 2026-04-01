@@ -1,5 +1,8 @@
 # ClockClock
 
+[![Docker Image Version](https://img.shields.io/docker/v/argonqq/clockclock/latest?label=docker%20hub)](https://hub.docker.com/r/argonqq/clockclock)
+[![GitHub Tag](https://img.shields.io/github/v/tag/ArgonQQ/ClockClock)](https://github.com/ArgonQQ/ClockClock/tags)
+
 **Simple, self-hosted time tracking for freelancers and small teams.**
 
 Track billable hours across clients, export reports, and stay on top of your work — all from a clean web interface with no external services required.
