@@ -14,7 +14,7 @@ on:
           - major
 
 jobs:
-  tag:
+  release:
     runs-on: ubuntu-latest
     environment: All
     permissions:
@@ -29,12 +29,10 @@ jobs:
       - name: Compute next version
         id: version
         run: |
-          # Get the latest semver tag, default to v0.0.0 if none exists
           LATEST=$(git tag --list 'v*' --sort=-version:refname | head -1)
           LATEST=${LATEST:-v0.0.0}
           echo "Latest tag: $LATEST"
 
-          # Strip the leading 'v' and split into parts
           VERSION=${LATEST#v}
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MINOR=$(echo "$VERSION" | cut -d. -f2)
@@ -49,6 +47,7 @@ jobs:
           NEXT="v${MAJOR}.${MINOR}.${PATCH}"
           echo "Next tag: $NEXT"
           echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "version=${NEXT#v}" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         run: |
@@ -56,3 +55,27 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: argonqq/clockclock
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
