@@ -71,7 +71,7 @@ docker run -d \
   -p 3000:3000 \
   -v clockclock-data:/app/data \
   -e ADMIN_PASSWORD=changeme \
-  ghcr.io/argonqq/clockclock:latest
+  argonqq/clockclock:latest
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and log in with `admin` / `changeme`.
@@ -126,7 +126,7 @@ Set `AUTH_MODE=oidc` and provide the following additional variables:
 ```yaml
 services:
   clockclock:
-    image: ghcr.io/argonqq/clockclock:latest
+    image: argonqq/clockclock:latest
     ports:
       - "3000:3000"
     volumes:
