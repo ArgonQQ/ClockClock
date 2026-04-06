@@ -14,7 +14,7 @@ let sortDir = 'desc';
 let editingUserId = null;
 let editingCustomerId = null;
 let customersList = []; // full customer objects {id, name, ...}
-let descTags = []; // { text, ms, fromDate, toDate }
+let descTags = []; // { text, ms, fromDate, toDate, customerId }
 let sectionStart_ts = null;
 let sectionElapsed = 0;
 
@@ -31,7 +31,8 @@ function saveTimerState() {
     descTags: descTags.map(tag => ({
       text: tag.text, ms: tag.ms,
       fromDate: tag.fromDate ? tag.fromDate.getTime() : null,
-      toDate: tag.toDate ? tag.toDate.getTime() : null
+      toDate: tag.toDate ? tag.toDate.getTime() : null,
+      customerId: tag.customerId || ''
     })),
     pendingSections
   };
@@ -46,7 +47,8 @@ function restoreTimerState() {
     descTags = (state.descTags || []).map(t => ({
       text: t.text, ms: t.ms,
       fromDate: t.fromDate ? new Date(t.fromDate) : null,
-      toDate: t.toDate ? new Date(t.toDate) : null
+      toDate: t.toDate ? new Date(t.toDate) : null,
+      customerId: t.customerId || ''
     }));
     pendingSections = state.pendingSections || [];
     if (state.customerId) document.getElementById('track-customer').value = state.customerId;
@@ -73,7 +75,6 @@ function restoreTimerState() {
     } else if (state.timerState === 'stopped' && pendingSections.length > 0) {
       timerState = 'stopped';
       updateTimerButtons();
-      if (state.customerId) document.getElementById('save-customer').value = state.customerId;
       renderSaveModalSections();
       document.getElementById('save-modal').style.display = '';
       return true;
@@ -205,7 +206,6 @@ async function loadCustomers() {
     const resp = await fetch('/api/customers');
     customersList = await resp.json();
     populateCustomerSelect('track-customer', true);
-    populateCustomerSelect('save-customer', false);
     populateCustomerSelect('add-entry-customer', false);
     populateCustomerFilter('filter-customer');
     populateCustomerFilter('report-customer');
@@ -405,7 +405,8 @@ function timerStop() {
   if (pendingDesc || remainingSectionMs > 0) {
     descTags.push({
       text: pendingDesc || '—', ms: remainingSectionMs,
-      fromDate: new Date(nowTs - remainingSectionMs), toDate: now
+      fromDate: new Date(nowTs - remainingSectionMs), toDate: now,
+      customerId: document.getElementById('track-customer').value
     });
     document.getElementById('track-desc').value = '';
     renderDescTags();
@@ -418,9 +419,9 @@ function timerStop() {
     minutes: Math.round(tag.ms / 60000),
     date: tag.toDate ? formatDate(tag.toDate) : formatDate(now),
     time_from: tag.fromDate ? formatTime(tag.fromDate) : '',
-    time_to: tag.toDate ? formatTime(tag.toDate) : ''
+    time_to: tag.toDate ? formatTime(tag.toDate) : '',
+    customer_id: tag.customerId || document.getElementById('track-customer').value
   }));
-  document.getElementById('save-customer').value = document.getElementById('track-customer').value;
   renderSaveModalSections();
   document.getElementById('save-modal').style.display = '';
   saveTimerState();
@@ -434,16 +435,40 @@ function renderSaveModalSections() {
     totalMin += s.minutes;
     const row = document.createElement('div');
     row.className = 'save-section-row';
-    row.innerHTML = `
+    const topLine = document.createElement('div');
+    topLine.className = 'save-section-top';
+    const custSelect = document.createElement('select');
+    custSelect.className = 'save-section-customer';
+    customersList.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      custSelect.appendChild(opt);
+    });
+    custSelect.value = s.customer_id;
+    custSelect.addEventListener('change', e => {
+      pendingSections[i].customer_id = e.target.value;
+      saveTimerState();
+    });
+    const removeBtn = document.createElement('span');
+    removeBtn.className = 'save-section-remove';
+    removeBtn.dataset.index = i;
+    removeBtn.innerHTML = '&times;';
+    topLine.appendChild(custSelect);
+    topLine.appendChild(removeBtn);
+    row.appendChild(topLine);
+    const bottomHTML = document.createElement('div');
+    bottomHTML.className = 'save-section-top';
+    bottomHTML.innerHTML = `
       <input type="text" class="save-section-desc" value="${esc(s.text).replace(/"/g, '&quot;')}">
       <span class="save-section-time">${s.time_from} → ${s.time_to} (${s.minutes} min)</span>
-      <span class="save-section-remove" data-index="${i}">&times;</span>
     `;
-    row.querySelector('.save-section-desc').addEventListener('input', e => {
+    row.appendChild(bottomHTML);
+    bottomHTML.querySelector('.save-section-desc').addEventListener('input', e => {
       pendingSections[i].text = e.target.value;
       saveTimerState();
     });
-    row.querySelector('.save-section-remove').addEventListener('click', () => {
+    removeBtn.addEventListener('click', () => {
       pendingSections.splice(i, 1);
       descTags.splice(i, 1);
       renderDescTags();
@@ -456,21 +481,24 @@ function renderSaveModalSections() {
 }
 
 async function confirmSave() {
-  const customerId = document.getElementById('save-customer').value;
-  if (!customerId) { alert(t('customerSelectRequired')); return; }
+  for (const section of pendingSections) {
+    if (!section.customer_id) { alert(t('customerSelectRequired')); return; }
+  }
   try {
+    let lastCustomerId = '';
     for (const section of pendingSections) {
       await fetch('/api/entries', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: parseInt(customerId, 10),
+          customer_id: parseInt(section.customer_id, 10),
           description: section.text, date: section.date,
           time_from: section.time_from, time_to: section.time_to,
           minutes: section.minutes
         })
       });
+      lastCustomerId = section.customer_id;
     }
-    localStorage.setItem('tt_last_customer_id', customerId);
+    if (lastCustomerId) localStorage.setItem('tt_last_customer_id', lastCustomerId);
     showNotification(t('entrySaved'));
     loadCustomers();
   } catch {}
@@ -504,7 +532,9 @@ function renderDescTags() {
     el.className = 'desc-tag';
     const mins = Math.round(tag.ms / 60000);
     const timeLabel = tag.ms > 0 ? ` (${mins} min)` : '';
-    el.innerHTML = `${esc(tag.text)}${timeLabel}<span class="desc-tag-remove" data-index="${i}">&times;</span>`;
+    const cust = customersList.find(c => String(c.id) === String(tag.customerId));
+    const custLabel = cust ? `<span class="desc-tag-customer">${esc(cust.name)}</span> ` : '';
+    el.innerHTML = `${custLabel}${esc(tag.text)}${timeLabel}<span class="desc-tag-remove" data-index="${i}">&times;</span>`;
     el.querySelector('.desc-tag-remove').addEventListener('click', () => {
       descTags.splice(i, 1);
       renderDescTags();
@@ -541,13 +571,14 @@ function formatDate(d) { return d.toISOString().slice(0, 10); }
 
 function addDescSection(text) {
   if (!text) return;
+  const currentCustomerId = document.getElementById('track-customer').value;
   if (timerState === 'stopped') {
-    descTags.push({ text, ms: 0, fromDate: null, toDate: null });
+    descTags.push({ text, ms: 0, fromDate: null, toDate: null, customerId: currentCustomerId });
   } else {
     const now = Date.now();
     let sectionMs = sectionElapsed;
     if (timerState === 'running') sectionMs += now - sectionStart_ts;
-    descTags.push({ text, ms: sectionMs, fromDate: new Date(now - sectionMs), toDate: new Date(now) });
+    descTags.push({ text, ms: sectionMs, fromDate: new Date(now - sectionMs), toDate: new Date(now), customerId: currentCustomerId });
     sectionElapsed = 0;
     sectionStart_ts = (timerState === 'running') ? now : null;
   }

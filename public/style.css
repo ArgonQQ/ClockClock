@@ -330,6 +330,12 @@ button:active { transform: scale(0.98); }
 
 .desc-tag-remove:hover { opacity: 1; }
 
+.desc-tag-customer {
+  font-weight: 500;
+  opacity: 0.65;
+  font-size: 0.68rem;
+}
+
 /* === Header === */
 header {
   background: var(--bg-header);
@@ -759,14 +765,22 @@ td button {
 
 .save-section-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem 0.5rem;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: 0.45rem 0.7rem;
   font-size: 0.8rem;
   transition: border-color var(--transition);
+}
+
+.save-section-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 .save-section-row:hover {
@@ -811,6 +825,17 @@ input.save-section-desc:focus {
 }
 
 .save-section-remove:hover { color: var(--danger); }
+
+select.save-section-customer {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
 
 .modal-info {
   margin: 1rem 0 0;
