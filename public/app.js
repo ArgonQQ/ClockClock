@@ -158,6 +158,10 @@ function doOidcLogin() { window.location.href = '/auth/oidc/login'; }
 async function doLogout() {
   await fetch('/auth/logout', { method: 'POST' });
   currentUser = null;
+  document.getElementById('tab-users').style.display = 'none';
+  document.getElementById('th-user').style.display = 'none';
+  document.getElementById('filter-user').style.display = 'none';
+  document.getElementById('report-user').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = '';
 }
