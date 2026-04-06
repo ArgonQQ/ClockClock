@@ -454,14 +454,17 @@ function renderSaveModalSections() {
     removeBtn.className = 'save-section-remove';
     removeBtn.dataset.index = i;
     removeBtn.innerHTML = '&times;';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'save-section-time';
+    timeSpan.textContent = `${s.time_from} → ${s.time_to} (${s.minutes} min)`;
     topLine.appendChild(custSelect);
+    topLine.appendChild(timeSpan);
     topLine.appendChild(removeBtn);
     row.appendChild(topLine);
     const bottomHTML = document.createElement('div');
     bottomHTML.className = 'save-section-top';
     bottomHTML.innerHTML = `
       <input type="text" class="save-section-desc" value="${esc(s.text).replace(/"/g, '&quot;')}">
-      <span class="save-section-time">${s.time_from} → ${s.time_to} (${s.minutes} min)</span>
     `;
     row.appendChild(bottomHTML);
     bottomHTML.querySelector('.save-section-desc').addEventListener('input', e => {
