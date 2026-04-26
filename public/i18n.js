@@ -68,6 +68,7 @@ const translations = {
     // Modals
     saveEntry: 'Save Entry',
     addEntry: 'Add Entry',
+    editEntry: 'Edit Entry',
     sections: 'Sections',
     total: 'Total',
     save: 'Save',
@@ -171,6 +172,7 @@ const translations = {
 
     saveEntry: 'Eintrag speichern',
     addEntry: 'Eintrag hinzufügen',
+    editEntry: 'Eintrag bearbeiten',
     sections: 'Abschnitte',
     total: 'Gesamt',
     save: 'Speichern',

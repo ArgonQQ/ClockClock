@@ -13,6 +13,7 @@ let sortField = 'date';
 let sortDir = 'desc';
 let editingUserId = null;
 let editingCustomerId = null;
+let editingEntryId = null;
 let customersList = []; // full customer objects {id, name, ...}
 let descTags = []; // { text, ms, fromDate, toDate, customerId }
 let sectionStart_ts = null;
@@ -185,12 +186,15 @@ function showApp() {
       if (lastId) document.getElementById('track-customer').value = lastId;
     }
   });
-  switchTab('tracker');
+  const validTabs = ['tracker', 'entries', 'reports', 'customers', 'users'];
+  const hash = location.hash.replace('#', '');
+  switchTab(validTabs.includes(hash) ? hash : 'tracker');
 }
 
 // === Tabs ===
 function switchTab(tab) {
   if (tab === 'users' && (!currentUser || currentUser.role !== 'admin')) return;
+  location.hash = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
   document.getElementById(`panel-${tab}`).style.display = '';
@@ -823,7 +827,10 @@ function renderEntries() {
       <td>${e.minutes}</td>
       <td>${esc(e.description)}</td>
       ${isAdmin ? `<td>${esc(e.username)}</td>` : ''}
-      <td><button class="btn-danger" onclick="deleteEntry(${e.id})">${t('delete')}</button></td>
+      <td>
+        <button onclick="editEntry(${e.id})">${t('edit')}</button>
+        <button class="btn-danger" onclick="deleteEntry(${e.id})">${t('delete')}</button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -855,6 +862,7 @@ function exportCsv() {
 
 // === Manual Entry ===
 function showAddEntry() {
+  editingEntryId = null;
   const now = new Date();
   const lastId = localStorage.getItem('tt_last_customer_id');
   if (lastId) document.getElementById('add-entry-customer').value = lastId;
@@ -863,9 +871,26 @@ function showAddEntry() {
   document.getElementById('add-entry-from').value = '';
   document.getElementById('add-entry-to').value = '';
   document.getElementById('add-entry-duration').textContent = '';
+  document.getElementById('add-entry-title').textContent = t('addEntry');
   document.getElementById('add-entry-modal').style.display = '';
   document.getElementById('add-entry-from').onchange = updateAddEntryDuration;
   document.getElementById('add-entry-to').onchange = updateAddEntryDuration;
+}
+
+function editEntry(id) {
+  const entry = entriesData.find(e => e.id === id);
+  if (!entry) return;
+  editingEntryId = id;
+  document.getElementById('add-entry-customer').value = entry.customer_id || '';
+  document.getElementById('add-entry-desc').value = entry.description || '';
+  document.getElementById('add-entry-date').value = entry.date;
+  document.getElementById('add-entry-from').value = entry.time_from;
+  document.getElementById('add-entry-to').value = entry.time_to;
+  document.getElementById('add-entry-title').textContent = t('editEntry');
+  document.getElementById('add-entry-modal').style.display = '';
+  document.getElementById('add-entry-from').onchange = updateAddEntryDuration;
+  document.getElementById('add-entry-to').onchange = updateAddEntryDuration;
+  updateAddEntryDuration();
 }
 
 function updateAddEntryDuration() {
@@ -896,10 +921,17 @@ async function saveManualEntry() {
   let minutes = (th * 60 + tm) - (fh * 60 + fm);
   if (minutes < 0) minutes += 1440;
   try {
-    await fetch('/api/entries', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customer_id: parseInt(customerId, 10), date, time_from, time_to, minutes, description })
-    });
+    if (editingEntryId) {
+      await fetch(`/api/entries/${editingEntryId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: parseInt(customerId, 10), date, time_from, time_to, minutes, description })
+      });
+    } else {
+      await fetch('/api/entries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: parseInt(customerId, 10), date, time_from, time_to, minutes, description })
+      });
+    }
     localStorage.setItem('tt_last_customer_id', customerId);
     loadCustomers(); loadEntries();
   } catch {}

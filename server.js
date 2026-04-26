@@ -420,18 +420,27 @@ app.put('/api/entries/:id', requireAuth, (req, res) => {
   if (req.session.role !== 'admin' && entry.user_id !== req.session.userId) {
     return res.status(403).json({ error: 'Forbidden' });
   }
-  const { customer_id, description } = req.body;
+  const { customer_id, description, date, time_from, time_to, minutes } = req.body;
+  let customerName = entry.customer;
+  let customerId = entry.customer_id;
   if (customer_id !== undefined) {
-    const customerId = parseInt(customer_id, 10);
-    const customerRow = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
-    if (!customerRow) {
-      return res.status(400).json({ error: 'Customer not found' });
-    }
-    db.prepare('UPDATE entries SET customer = ?, customer_id = ? WHERE id = ?').run(customerRow.name, customerId, entry.id);
+    const cId = parseInt(customer_id, 10);
+    const customerRow = db.prepare('SELECT * FROM customers WHERE id = ?').get(cId);
+    if (!customerRow) return res.status(400).json({ error: 'Customer not found' });
+    customerName = customerRow.name;
+    customerId = cId;
   }
-  if (description !== undefined) {
-    db.prepare('UPDATE entries SET description = ? WHERE id = ?').run(description.trim(), entry.id);
-  }
+  db.prepare(
+    'UPDATE entries SET customer = ?, customer_id = ?, description = ?, date = ?, time_from = ?, time_to = ?, minutes = ? WHERE id = ?'
+  ).run(
+    customerName, customerId,
+    description !== undefined ? description.trim() : entry.description,
+    date !== undefined ? date : entry.date,
+    time_from !== undefined ? time_from : entry.time_from,
+    time_to !== undefined ? time_to : entry.time_to,
+    minutes !== undefined ? parseInt(minutes, 10) : entry.minutes,
+    entry.id
+  );
   const updated = db.prepare('SELECT entries.*, users.username, customers.name as customer_name FROM entries JOIN users ON entries.user_id = users.id LEFT JOIN customers ON entries.customer_id = customers.id WHERE entries.id = ?').get(entry.id);
   res.json(updated);
 });
