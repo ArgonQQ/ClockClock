@@ -89,6 +89,32 @@ function restoreTimerState() {
 
 function clearTimerState() { localStorage.removeItem('tt_timer_state'); }
 
+// === Password reset hash detection ===
+function handleResetHash() {
+  const m = location.hash.match(/^#reset\?token=([A-Za-z0-9_\-]+)$/);
+  if (!m) return false;
+
+  pendingResetToken = m[1];
+  history.replaceState(null, '', location.pathname);
+
+  const login = document.getElementById('login-screen');
+  const app   = document.getElementById('app');
+  const emailReq = document.getElementById('email-required-modal');
+  if (login)    login.style.display = 'none';
+  if (app)      app.style.display = 'none';
+  if (emailReq) emailReq.style.display = 'none';
+
+  const pw1 = document.getElementById('reset-new-pw');
+  const pw2 = document.getElementById('reset-confirm-pw');
+  const errEl = document.getElementById('reset-error');
+  if (pw1) pw1.value = '';
+  if (pw2) pw2.value = '';
+  if (errEl) errEl.textContent = '';
+
+  document.getElementById('reset-modal').style.display = '';
+  return true;
+}
+
 // === Init ===
 document.addEventListener('DOMContentLoaded', async () => {
   const savedTheme = localStorage.getItem('tt_theme') || 'dark';
@@ -155,15 +181,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  window.addEventListener('hashchange', () => { handleResetHash(); });
+
   // Check for password reset token in URL hash before normal auth flow
-  const resetMatch = location.hash.match(/^#reset\?token=([A-Za-z0-9_\-]+)$/);
-  if (resetMatch) {
-    pendingResetToken = resetMatch[1];
-    history.replaceState(null, '', location.pathname);
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('reset-modal').style.display = '';
-    return;
-  }
+  if (handleResetHash()) return;
 
   const modeResp = await fetch('/auth/mode');
   const { mode } = await modeResp.json();

@@ -209,6 +209,30 @@ body {
   margin-top: 0.75rem;
 }
 
+.login-card #forgot-link {
+  display: block;
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+.login-card #forgot-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.login-card #forgot-link:focus-visible {
+  outline: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+  border-radius: var(--radius-sm);
+}
+
 .error {
   color: var(--danger);
   font-size: 0.8rem;
