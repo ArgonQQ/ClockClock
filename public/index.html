@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClockClock</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,11 +17,13 @@
       <div class="login-lang">
         <button onclick="setLang('en')" class="lang-btn" data-lang-btn="en">EN</button>
         <button onclick="setLang('de')" class="lang-btn" data-lang-btn="de">DE</button>
+        <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
       </div>
       <div id="login-local">
         <input type="text" id="login-user" data-i18n-ph="loginUser" placeholder="Username" autocomplete="username">
         <input type="password" id="login-pass" data-i18n-ph="loginPass" placeholder="Password" autocomplete="current-password">
         <button id="login-btn" data-i18n="loginBtn" onclick="doLogin()">Login</button>
+        <a href="#" id="forgot-link" data-i18n="forgotPassword" onclick="event.preventDefault();showForgotModal()" style="display:none">Forgot password?</a>
       </div>
       <div id="login-oidc" style="display:none">
         <button data-i18n="loginOidc" onclick="doOidcLogin()">Login with SSO</button>
@@ -37,7 +42,8 @@
       <div class="header-right">
         <button onclick="setLang('en')" class="lang-btn" data-lang-btn="en">EN</button>
         <button onclick="setLang('de')" class="lang-btn" data-lang-btn="de">DE</button>
-        <button id="theme-toggle" onclick="toggleTheme()">🌙</button>
+        <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+        <button id="account-btn" data-i18n="account" onclick="showAccountModal()" style="display:none">Account</button>
         <button data-i18n="logout" onclick="doLogout()">Logout</button>
       </div>
     </header>
@@ -85,7 +91,7 @@
         <select id="filter-customer">
           <option value="" data-i18n="allCustomers">All Customers</option>
         </select>
-        <select id="filter-date-range" onchange="onDateRangeChange()">
+        <select id="filter-date-range">
           <option value="all" data-i18n="allTime">All Time</option>
           <option value="today" data-i18n="today">Today</option>
           <option value="week" data-i18n="thisWeek">This Week</option>
@@ -99,7 +105,6 @@
         <select id="filter-user" style="display:none">
           <option value="" data-i18n="allUsers">All Users</option>
         </select>
-        <button data-i18n="apply" onclick="loadEntries()">Apply</button>
         <button data-i18n="exportCsv" onclick="exportCsv()">Export CSV</button>
         <button data-i18n="addEntry" onclick="showAddEntry()">+ Add Entry</button>
       </div>
@@ -128,7 +133,7 @@
         <select id="report-customer">
           <option value="" data-i18n="allCustomers">All Customers</option>
         </select>
-        <select id="report-date-range" onchange="onReportDateRangeChange()">
+        <select id="report-date-range">
           <option value="all" data-i18n="allTime">All Time</option>
           <option value="today" data-i18n="today">Today</option>
           <option value="week" data-i18n="thisWeek">This Week</option>
@@ -142,7 +147,6 @@
         <select id="report-user" style="display:none">
           <option value="" data-i18n="allUsers">All Users</option>
         </select>
-        <button data-i18n="apply" onclick="loadReports()">Apply</button>
         <button data-i18n="exportPdf" onclick="exportReportPdf()">Export PDF</button>
       </div>
       <div class="report-cards">
@@ -197,6 +201,7 @@
           <thead>
             <tr>
               <th data-i18n="thUsername">Username</th>
+              <th data-i18n="email">Email</th>
               <th data-i18n="thRole">Role</th>
               <th data-i18n="thCreated">Created</th>
               <th data-i18n="thActions">Actions</th>
@@ -230,6 +235,8 @@
       <h2 id="user-modal-title" data-i18n="addUser">Add User</h2>
       <label data-i18n="thUsername">Username</label>
       <input type="text" id="modal-username">
+      <label data-i18n="email">Email</label>
+      <input type="email" id="modal-email">
       <label data-i18n="password">Password</label>
       <input type="password" id="modal-password">
       <label data-i18n="thRole">Role</label>
@@ -237,6 +244,7 @@
         <option value="user">User</option>
         <option value="admin">Admin</option>
       </select>
+      <p id="user-modal-error" class="error"></p>
       <div class="modal-actions">
         <button data-i18n="save" onclick="saveUser()">Save</button>
         <button data-i18n="cancel" onclick="closeUserModal()" class="btn-secondary">Cancel</button>
@@ -315,6 +323,117 @@
       <div class="modal-actions">
         <button data-i18n="save" onclick="saveCustomer()">Save</button>
         <button data-i18n="cancel" onclick="closeCustomerModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Modal -->
+  <div id="account-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 data-i18n="account">Account</h2>
+      <div id="account-sso-banner" style="display:none">
+        <p data-i18n="ssoManaged"></p>
+      </div>
+      <div id="account-main">
+        <label data-i18n="currentEmail">Current Email</label>
+        <input type="text" id="account-email-display" readonly>
+        <label data-i18n="theme">Theme</label>
+        <div class="theme-picker">
+          <button class="theme-pick" data-theme-pick="light" onclick="setTheme('light')">
+            <span class="theme-pick-icon">☀️</span>
+            <span data-i18n="themeLight">Light</span>
+          </button>
+          <button class="theme-pick" data-theme-pick="dark" onclick="setTheme('dark')">
+            <span class="theme-pick-icon">🌙</span>
+            <span data-i18n="themeDark">Dark</span>
+          </button>
+          <button class="theme-pick" data-theme-pick="terminal" onclick="setTheme('terminal')">
+            <span class="theme-pick-icon">⌨️</span>
+            <span data-i18n="themeTerminal">Terminal</span>
+          </button>
+        </div>
+        <div class="modal-actions">
+          <button id="account-change-email-btn" data-i18n="changeEmail" onclick="showAccountChangeEmail()">Change Email</button>
+          <button id="account-change-pw-btn" data-i18n="changePassword" onclick="showAccountChangePassword()">Change Password</button>
+          <button data-i18n="cancel" onclick="closeAccountModal()" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+      <div id="account-email-form" style="display:none">
+        <label data-i18n="newEmail">New Email</label>
+        <input type="email" id="account-new-email">
+        <div id="account-email-pw-row">
+          <label data-i18n="currentPassword">Current Password</label>
+          <input type="password" id="account-email-current-pw">
+        </div>
+        <p id="account-email-error" class="error"></p>
+        <div class="modal-actions">
+          <button data-i18n="save" onclick="submitChangeEmail()">Save</button>
+          <button data-i18n="cancel" onclick="showAccountMain()" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+      <div id="account-pw-form" style="display:none">
+        <label data-i18n="currentPassword">Current Password</label>
+        <input type="password" id="account-current-pw">
+        <label data-i18n="newPassword">New Password</label>
+        <input type="password" id="account-new-pw">
+        <label data-i18n="confirmPassword">Confirm Password</label>
+        <input type="password" id="account-confirm-pw">
+        <p id="account-pw-error" class="error"></p>
+        <div class="modal-actions">
+          <button data-i18n="save" onclick="submitChangePassword()">Save</button>
+          <button data-i18n="cancel" onclick="showAccountMain()" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forgot Password Modal -->
+  <div id="forgot-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 data-i18n="forgotPassword">Forgot Password?</h2>
+      <div id="forgot-form">
+        <label data-i18n="email">Email</label>
+        <input type="email" id="forgot-email">
+        <p id="forgot-error" class="error"></p>
+        <div class="modal-actions">
+          <button data-i18n="sendResetLink" onclick="submitForgot()">Send Reset Link</button>
+          <button data-i18n="cancel" onclick="closeForgotModal()" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+      <div id="forgot-success" style="display:none">
+        <p data-i18n="resetSent"></p>
+        <div class="modal-actions">
+          <button data-i18n="cancel" onclick="closeForgotModal()" class="btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset Password Modal -->
+  <div id="reset-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 data-i18n="resetPassword">Reset Password</h2>
+      <label data-i18n="newPassword">New Password</label>
+      <input type="password" id="reset-new-pw">
+      <label data-i18n="confirmPassword">Confirm Password</label>
+      <input type="password" id="reset-confirm-pw">
+      <p id="reset-error" class="error"></p>
+      <div class="modal-actions">
+        <button data-i18n="resetPassword" onclick="submitReset()">Reset Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email Required Modal (blocks app until set) -->
+  <div id="email-required-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 data-i18n="emailRequiredTitle">Email Required</h2>
+      <p data-i18n="emailRequiredBody"></p>
+      <label data-i18n="email">Email</label>
+      <input type="email" id="email-required-input">
+      <p id="email-required-error" class="error"></p>
+      <div class="modal-actions">
+        <button data-i18n="save" onclick="submitRequiredEmail()">Save</button>
       </div>
     </div>
   </div>

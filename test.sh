@@ -22,10 +22,10 @@ if [ "$1" = "seed" ]; then
   http -c /tmp/cc-admin -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASS\"}" > /dev/null
 
   # Create users
-  post /tmp/cc-admin "/api/users" '{"username":"sarah.mueller","password":"sarah2026","role":"user"}'
-  post /tmp/cc-admin "/api/users" '{"username":"tom.brenner","password":"tom2026","role":"user"}'
-  http -c /tmp/cc-sarah -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"sarah.mueller","password":"sarah2026"}' > /dev/null
-  http -c /tmp/cc-tom -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"tom.brenner","password":"tom2026"}' > /dev/null
+  post /tmp/cc-admin "/api/users" '{"username":"sarah.mueller","password":"sarah2026secure","email":"sarah@example.com","role":"user"}'
+  post /tmp/cc-admin "/api/users" '{"username":"tom.brenner","password":"tom2026secure","email":"tom@example.com","role":"user"}'
+  http -c /tmp/cc-sarah -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"sarah.mueller","password":"sarah2026secure"}' > /dev/null
+  http -c /tmp/cc-tom -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"tom.brenner","password":"tom2026secure"}' > /dev/null
 
   # Admin customers
   C1=$(post_get_id /tmp/cc-admin "/api/customers" '{"name":"Hofmann Metallbau GmbH","contact_person":"Klaus Hofmann","email":"k.hofmann@hofmann-metall.de","phone":"+49 711 4829301","address":"Industriestr. 42","city":"Stuttgart","zip":"70173","country":"Germany","notes":"Monthly retainer, invoiced end of month"}')
@@ -92,8 +92,8 @@ if [ "$1" = "seed" ]; then
   echo ""
   echo "  Logins:"
   echo "    admin / $ADMIN_PASS"
-  echo "    sarah.mueller / sarah2026"
-  echo "    tom.brenner / tom2026"
+  echo "    sarah.mueller / sarah2026secure"
+  echo "    tom.brenner / tom2026secure"
   exit 0
 fi
 
@@ -167,11 +167,18 @@ assert "unauthenticated rejected" "401" "$(http_status "$BASE/auth/me")"
 # ── Admin creates test users ──────────────────────
 echo ""
 echo "User Management"
-http_body -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"testuser1","password":"tp1","role":"user"}' > /dev/null
-http_body -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"testuser2","password":"tp2","role":"user"}' > /dev/null
+# Clean up any leftover test users from previous runs
+USERS_JSON=$(http_body -b /tmp/cc-admin "$BASE/api/users")
+for uname in testuser1 testuser2 emailless; do
+  DEL_ID=$(echo "$USERS_JSON" | grep -o "\"id\":[0-9]*,\"username\":\"${uname}\"" | grep -o '[0-9]*' | head -1)
+  [ -n "$DEL_ID" ] && http_body -b /tmp/cc-admin -X DELETE "$BASE/api/users/$DEL_ID" > /dev/null 2>&1
+done
 
-http_body -c /tmp/cc-tu1 -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"testuser1","password":"tp1"}' > /dev/null
-http_body -c /tmp/cc-tu2 -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"testuser2","password":"tp2"}' > /dev/null
+http_body -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"testuser1","password":"testpass001","email":"tu1@example.com","role":"user"}' > /dev/null
+http_body -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"testuser2","password":"testpass002","email":"tu2@example.com","role":"user"}' > /dev/null
+
+http_body -c /tmp/cc-tu1 -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"testuser1","password":"testpass001"}' > /dev/null
+http_body -c /tmp/cc-tu2 -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"testuser2","password":"testpass002"}' > /dev/null
 
 assert "testuser1 login" "200" "$(http_status -b /tmp/cc-tu1 "$BASE/auth/me")"
 assert "testuser2 login" "200" "$(http_status -b /tmp/cc-tu2 "$BASE/auth/me")"
@@ -245,6 +252,85 @@ assert "users blocked" "401" "$(http_status "$BASE/api/users")"
 echo ""
 echo "Referential Integrity"
 assert "cannot delete customer with entries" "409" "$(http_status -b /tmp/cc-tu2 -X DELETE "$BASE/api/customers/$U2C_ID")"
+
+# ── Change Password ────────────────────────────────
+echo ""
+echo "Change Password"
+assert "change-pw: wrong current → 401" "401" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"wrongpass","new_password":"newpass12345"}')"
+assert "change-pw: too short → 400" "400" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"testpass001","new_password":"short"}')"
+assert_contains "change-pw: too short error" "password_too_short" "$(http_body -b /tmp/cc-tu1 -X POST "$BASE/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"testpass001","new_password":"short"}')"
+assert "change-pw: same as username → 400" "400" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"testpass001","new_password":"testuser1"}')"
+assert_contains "change-pw: same as username error" "password_same_as_username" "$(http_body -b /tmp/cc-tu1 -X POST "$BASE/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"testpass001","new_password":"testuser1"}')"
+
+# Change password happy path — also verifies other sessions invalidated
+http_body -c /tmp/cc-tu1b -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"testuser1","password":"testpass001"}' > /dev/null
+assert "change-pw: happy path" "200" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-password" -H 'Content-Type: application/json' -d '{"current_password":"testpass001","new_password":"newpass12345"}')"
+assert "change-pw: other session invalidated" "401" "$(http_status -b /tmp/cc-tu1b "$BASE/auth/me")"
+# Re-login with new password for further tests
+http_body -c /tmp/cc-tu1 -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"testuser1","password":"newpass12345"}' > /dev/null
+rm -f /tmp/cc-tu1b
+
+# ── Change Email ───────────────────────────────────
+echo ""
+echo "Change Email"
+assert "change-email: invalid format → 400" "400" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"notanemail","current_password":"newpass12345"}')"
+assert_contains "change-email: invalid format error" "email_invalid" "$(http_body -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"notanemail","current_password":"newpass12345"}')"
+assert "change-email: taken by other user → 409" "409" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"tu2@example.com","current_password":"newpass12345"}')"
+assert_contains "change-email: taken error" "email_taken" "$(http_body -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"tu2@example.com","current_password":"newpass12345"}')"
+assert "change-email: existing email, no password → 401" "401" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"tu1new@example.com"}')"
+assert "change-email: existing email, wrong password → 401" "401" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"tu1new@example.com","current_password":"wrongpass"}')"
+assert "change-email: happy path" "200" "$(http_status -b /tmp/cc-tu1 -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"tu1new@example.com","current_password":"newpass12345"}')"
+TU1_EMAIL=$(http_body -b /tmp/cc-tu1 "$BASE/auth/me")
+assert_contains "change-email: email updated in /auth/me" "tu1new@example.com" "$TU1_EMAIL"
+
+# ── Initial Email Set (no current_password required) ──
+echo ""
+echo "Initial Email Set"
+# Create a user without email by directly inserting (simulate old user)
+http_body -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"emailless","password":"emailless123","email":"tmp@example.com","role":"user"}' > /dev/null
+# Remove email to simulate legacy user
+node -e "const db=require('better-sqlite3')('/workspace/data/timetracker.db');db.prepare('UPDATE users SET email=NULL WHERE username=?').run('emailless');" 2>/dev/null || true
+http_body -c /tmp/cc-el -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"username":"emailless","password":"emailless123"}' > /dev/null
+assert "initial-set email: no password required → 200" "200" "$(http_status -b /tmp/cc-el -X POST "$BASE/auth/change-email" -H 'Content-Type: application/json' -d '{"new_email":"emailless@example.com"}')"
+rm -f /tmp/cc-el
+http_body -b /tmp/cc-admin -X DELETE "$BASE/api/users/$(http_body -b /tmp/cc-admin "$BASE/api/users" | grep -o '"id":[0-9]*,"username":"emailless"' | grep -o '[0-9]*' | head -1)" > /dev/null 2>&1 || true
+
+# ── Forgot / Reset Password ────────────────────────
+echo ""
+echo "Forgot / Reset Password"
+assert "forgot-pw: unknown email → 200" "200" "$(http_status -X POST "$BASE/auth/forgot-password" -H 'Content-Type: application/json' -d '{"email":"nobody@example.com"}')"
+assert "forgot-pw: happy path → 200" "200" "$(http_status -X POST "$BASE/auth/forgot-password" -H 'Content-Type: application/json' -d '{"email":"tu1new@example.com"}')"
+# Rate limit: per-email 3/hour; 2nd and 3rd succeed, 4th should 429
+http_status -X POST "$BASE/auth/forgot-password" -H 'Content-Type: application/json' -d '{"email":"ratelimit@example.com"}' > /dev/null
+http_status -X POST "$BASE/auth/forgot-password" -H 'Content-Type: application/json' -d '{"email":"ratelimit@example.com"}' > /dev/null
+http_status -X POST "$BASE/auth/forgot-password" -H 'Content-Type: application/json' -d '{"email":"ratelimit@example.com"}' > /dev/null
+assert "forgot-pw: rate limit 4th same email → 429" "429" "$(http_status -X POST "$BASE/auth/forgot-password" -H 'Content-Type: application/json' -d '{"email":"ratelimit@example.com"}')"
+
+assert "reset-pw: invalid token → 400" "400" "$(http_status -X POST "$BASE/auth/reset-password" -H 'Content-Type: application/json' -d '{"token":"bogustoken","new_password":"resetpass1234"}')"
+assert_contains "reset-pw: invalid token error" "invalid_token" "$(http_body -X POST "$BASE/auth/reset-password" -H 'Content-Type: application/json' -d '{"token":"bogustoken","new_password":"resetpass1234"}')"
+assert "reset-pw: too short → 400" "400" "$(http_status -X POST "$BASE/auth/reset-password" -H 'Content-Type: application/json' -d '{"token":"bogustoken","new_password":"short"}')"
+
+# Reset happy path: grab token from DB
+RESET_TOKEN=$(node -e "
+const crypto=require('crypto');
+const db=require('better-sqlite3')('/workspace/data/timetracker.db');
+const raw=crypto.randomBytes(32).toString('base64url');
+const hash=crypto.createHash('sha256').update(raw).digest('hex');
+const u=db.prepare('SELECT id FROM users WHERE username=?').get('testuser1');
+const now=Date.now();
+db.prepare('DELETE FROM password_resets WHERE user_id=? AND used_at IS NULL').run(u.id);
+db.prepare('INSERT INTO password_resets(user_id,token_hash,expires_at,created_at) VALUES(?,?,?,?)').run(u.id,hash,now+3600000,now);
+console.log(raw);
+" 2>/dev/null)
+assert "reset-pw: happy path → 200" "200" "$(http_status -X POST "$BASE/auth/reset-password" -H 'Content-Type: application/json' -d "{\"token\":\"$RESET_TOKEN\",\"new_password\":\"resetpass1234\"}")"
+assert "reset-pw: old session invalidated" "401" "$(http_status -b /tmp/cc-tu1 "$BASE/auth/me")"
+assert "reset-pw: reused token → 400" "400" "$(http_status -X POST "$BASE/auth/reset-password" -H 'Content-Type: application/json' -d "{\"token\":\"$RESET_TOKEN\",\"new_password\":\"resetpass1234\"}")"
+
+# ── Admin User API with email ──────────────────────
+echo ""
+echo "Admin User API (email)"
+assert "admin POST /api/users without email → 400" "400" "$(http_status -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"noemail","password":"longenoughpw","role":"user"}')"
+assert "admin POST /api/users with taken email → 409" "409" "$(http_status -b /tmp/cc-admin -X POST "$BASE/api/users" -H 'Content-Type: application/json' -d '{"username":"dupemail","password":"longenoughpw","email":"tu2@example.com","role":"user"}')"
 
 # ── Cleanup ────────────────────────────────────────
 rm -f /tmp/cc-admin /tmp/cc-tu1 /tmp/cc-tu2

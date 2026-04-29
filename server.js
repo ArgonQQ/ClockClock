@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const mailer = require('./mailer');
 
 // --- Config ---
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -17,6 +18,8 @@ const SESSION_SECRET = process.env.SESSION_SECRET || (() => {
   return secret;
 })();
 const AUTH_MODE = process.env.AUTH_MODE || 'local';
+const RESET_TOKEN_TTL_MIN = parseInt(process.env.RESET_TOKEN_TTL_MIN || '60', 10);
+const APP_BASE_URL = process.env.APP_BASE_URL || `http://localhost:${PORT}`;
 
 // OIDC config
 const OIDC_ISSUER = process.env.OIDC_ISSUER || '';
@@ -119,6 +122,28 @@ db.exec(`
   `);
 }
 
+// --- Migration: add email to users ---
+{
+  const userCols = db.prepare('PRAGMA table_info(users)').all();
+  if (!userCols.some(c => c.name === 'email')) {
+    db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
+  }
+}
+
+// --- Password reset tokens table ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_pwreset_user ON password_resets(user_id);
+`);
+
 // --- Password hashing with scrypt ---
 function hashPassword(password, salt) {
   salt = salt || crypto.randomBytes(16).toString('hex');
@@ -129,6 +154,13 @@ function hashPassword(password, salt) {
 function verifyPassword(password, hash, salt) {
   const result = crypto.scryptSync(password, salt, 64).toString('hex');
   return crypto.timingSafeEqual(Buffer.from(result, 'hex'), Buffer.from(hash, 'hex'));
+}
+
+function validatePassword(pw, username) {
+  if (typeof pw !== 'string') return 'too_short';
+  if (pw.toLowerCase() === (username || '').toLowerCase()) return 'same_as_username';
+  if (pw.length < 10) return 'too_short';
+  return null;
 }
 
 // --- Create default admin if no users exist ---
@@ -143,6 +175,25 @@ if (userCount.count === 0) {
   console.log(`  Username: ${adminUser}`);
   console.log(`  Password: ${adminPass}`);
   console.log('============================================');
+}
+
+// --- Password reset helpers ---
+function issuePasswordResetToken(userId) {
+  const raw = crypto.randomBytes(32).toString('base64url');
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  const now = Date.now();
+  const exp = now + RESET_TOKEN_TTL_MIN * 60 * 1000;
+  db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(userId);
+  db.prepare('INSERT INTO password_resets (user_id, token_hash, expires_at, created_at) VALUES (?,?,?,?)').run(userId, hash, exp, now);
+  return raw;
+}
+
+function invalidateSessionsForUser(userId, exceptSid) {
+  if (exceptSid) {
+    db.prepare("DELETE FROM sessions WHERE json_extract(sess,'$.userId') = ? AND sid != ?").run(userId, exceptSid);
+  } else {
+    db.prepare("DELETE FROM sessions WHERE json_extract(sess,'$.userId') = ?").run(userId);
+  }
 }
 
 // --- SQLite session store ---
@@ -198,26 +249,49 @@ app.use(session({
   cookie: {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     httpOnly: true,
-    sameSite: 'lax'
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
   }
 }));
 
 // --- Rate limiting for login ---
 const loginAttempts = new Map();
-function rateLimitLogin(req, res, next) {
+const LOGIN_WINDOW = 15 * 60 * 1000; // 15 min
+const LOGIN_MAX = 15;
+function checkLoginRateLimit(req) {
   const key = req.ip;
   const now = Date.now();
-  const window = 15 * 60 * 1000; // 15 min
-  const maxAttempts = 15;
-  let attempts = loginAttempts.get(key) || [];
-  attempts = attempts.filter(t => now - t < window);
-  if (attempts.length >= maxAttempts) {
-    return res.status(429).json({ error: 'Too many login attempts. Try again later.' });
-  }
+  const attempts = (loginAttempts.get(key) || []).filter(t => now - t < LOGIN_WINDOW);
+  loginAttempts.set(key, attempts);
+  return attempts.length >= LOGIN_MAX;
+}
+function recordLoginFailure(req) {
+  const key = req.ip;
+  const now = Date.now();
+  const attempts = (loginAttempts.get(key) || []).filter(t => now - t < LOGIN_WINDOW);
   attempts.push(now);
   loginAttempts.set(key, attempts);
-  next();
 }
+
+// --- Rate limiters for account/password flows ---
+function makeRateLimiter(maxAttempts, windowMs) {
+  const map = new Map();
+  return function(key) {
+    const now = Date.now();
+    let attempts = map.get(key) || [];
+    attempts = attempts.filter(ts => now - ts < windowMs);
+    if (attempts.length >= maxAttempts) return false;
+    attempts.push(now);
+    map.set(key, attempts);
+    return true;
+  };
+}
+
+const rateLimitChangePassword = makeRateLimiter(5, 60 * 60 * 1000);
+const rateLimitChangeEmail = makeRateLimiter(5, 60 * 60 * 1000);
+const rateLimitForgotByIp = makeRateLimiter(10, 60 * 60 * 1000);
+const rateLimitForgotByEmail = makeRateLimiter(3, 60 * 60 * 1000);
+const rateLimitResetByIp = makeRateLimiter(20, 60 * 60 * 1000);
 
 // --- Auth middleware ---
 function requireAuth(req, res, next) {
@@ -232,27 +306,37 @@ function requireAdmin(req, res, next) {
 }
 
 // --- Auth routes ---
-app.post('/auth/login', rateLimitLogin, (req, res) => {
+app.post('/auth/login', (req, res) => {
+  if (checkLoginRateLimit(req)) return res.status(429).json({ error: 'Too many login attempts. Try again later.' });
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || !user.password_hash || !user.salt) {
+    recordLoginFailure(req);
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   try {
     if (!verifyPassword(password, user.password_hash, user.salt)) {
+      recordLoginFailure(req);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
   } catch {
+    recordLoginFailure(req);
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   req.session.userId = user.id;
   req.session.username = user.username;
   req.session.role = user.role;
-  res.json({ id: user.id, username: user.username, role: user.role });
+  res.json({
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    email: user.email || null,
+    hasPassword: !!(user.password_hash)
+  });
 });
 
 app.post('/auth/logout', (req, res) => {
@@ -261,11 +345,123 @@ app.post('/auth/logout', (req, res) => {
 
 app.get('/auth/me', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
-  res.json({ id: req.session.userId, username: req.session.username, role: req.session.role });
+  const user = db.prepare('SELECT email, password_hash FROM users WHERE id = ?').get(req.session.userId);
+  res.json({
+    id: req.session.userId,
+    username: req.session.username,
+    role: req.session.role,
+    email: user ? (user.email || null) : null,
+    hasPassword: !!(user && user.password_hash)
+  });
 });
 
 app.get('/auth/mode', (_req, res) => {
   res.json({ mode: AUTH_MODE });
+});
+
+app.post('/auth/change-password', requireAuth, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!user || !user.password_hash || user.oidc_sub) return res.status(404).json({ error: 'Not available' });
+
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) return res.status(400).json({ error: 'Missing fields' });
+
+  const pwErr = validatePassword(new_password, user.username);
+  if (pwErr === 'too_short') return res.status(400).json({ error: 'password_too_short' });
+  if (pwErr === 'same_as_username') return res.status(400).json({ error: 'password_same_as_username' });
+
+  if (!rateLimitChangePassword(req.session.userId)) return res.status(429).json({ error: 'Too many attempts' });
+
+  try {
+    if (!verifyPassword(current_password, user.password_hash, user.salt)) {
+      return res.status(401).json({ error: 'Invalid current password' });
+    }
+  } catch { return res.status(401).json({ error: 'Invalid current password' }); }
+
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
+  invalidateSessionsForUser(user.id, req.session.id);
+  res.json({ ok: true });
+});
+
+app.post('/auth/change-email', requireAuth, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!user || !user.password_hash || user.oidc_sub) return res.status(404).json({ error: 'Not available' });
+
+  const { current_password, new_email } = req.body;
+  if (!new_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(new_email)) {
+    return res.status(400).json({ error: 'email_invalid' });
+  }
+
+  if (!rateLimitChangeEmail(req.session.userId)) return res.status(429).json({ error: 'Too many attempts' });
+
+  if (user.email) {
+    if (!current_password) return res.status(401).json({ error: 'Current password required' });
+    try {
+      if (!verifyPassword(current_password, user.password_hash, user.salt)) {
+        return res.status(401).json({ error: 'Invalid current password' });
+      }
+    } catch { return res.status(401).json({ error: 'Invalid current password' }); }
+  }
+
+  const taken = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(new_email, user.id);
+  if (taken) return res.status(409).json({ error: 'email_taken' });
+
+  db.prepare('UPDATE users SET email = ? WHERE id = ?').run(new_email, user.id);
+  res.json({ ok: true, email: new_email });
+});
+
+app.post('/auth/forgot-password', async (req, res) => {
+  if (AUTH_MODE !== 'local') return res.status(404).json({ error: 'Not available' });
+  if (!rateLimitForgotByIp(req.ip)) return res.status(429).json({ error: 'Too many requests' });
+
+  const { email, lang } = req.body;
+  if (email && !rateLimitForgotByEmail(email.toLowerCase())) return res.status(429).json({ error: 'Too many requests' });
+
+  res.json({ ok: true });
+
+  if (!email) return;
+  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email);
+  if (!user || !user.password_hash || user.oidc_sub) return;
+
+  const raw = issuePasswordResetToken(user.id);
+  const link = `${APP_BASE_URL}/#reset?token=${raw}`;
+  const useLang = lang === 'de' ? 'de' : 'en';
+  try {
+    await mailer.sendPasswordResetEmail(user.email, link, useLang);
+  } catch (err) {
+    console.error('Failed to send password reset email:', err.message);
+  }
+});
+
+app.post('/auth/reset-password', (req, res) => {
+  if (AUTH_MODE !== 'local') return res.status(404).json({ error: 'Not available' });
+  if (!rateLimitResetByIp(req.ip)) return res.status(429).json({ error: 'Too many requests' });
+
+  const { token, new_password } = req.body;
+  if (!token) return res.status(400).json({ error: 'invalid_token' });
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const resetRow = db.prepare('SELECT * FROM password_resets WHERE token_hash = ?').get(tokenHash);
+  if (!resetRow || resetRow.used_at || resetRow.expires_at < Date.now()) {
+    return res.status(400).json({ error: 'invalid_token' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(resetRow.user_id);
+  if (!user) return res.status(400).json({ error: 'invalid_token' });
+
+  const pwErr = validatePassword(new_password, user.username);
+  if (pwErr === 'too_short') return res.status(400).json({ error: 'password_too_short' });
+  if (pwErr === 'same_as_username') return res.status(400).json({ error: 'password_same_as_username' });
+
+  const { hash, salt } = hashPassword(new_password);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
+    db.prepare('UPDATE password_resets SET used_at = ? WHERE id = ?').run(Date.now(), resetRow.id);
+    invalidateSessionsForUser(user.id);
+  })();
+
+  res.json({ ok: true });
 });
 
 // --- OIDC routes ---
@@ -526,31 +722,40 @@ app.delete('/api/customers/:id', requireAuth, (req, res) => {
 
 // --- Users API (admin) ---
 app.get('/api/users', requireAdmin, (req, res) => {
-  const users = db.prepare('SELECT id, username, role, created_at FROM users ORDER BY username').all();
+  const users = db.prepare('SELECT id, username, email, role, created_at FROM users ORDER BY username').all();
   res.json(users);
 });
 
 app.post('/api/users', requireAdmin, (req, res) => {
-  const { username, password, role } = req.body;
+  const { username, password, role, email } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-  const validRole = role === 'admin' ? 'admin' : 'user';
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'email_invalid' });
+  const pwErr = validatePassword(password, username);
+  if (pwErr === 'too_short') return res.status(400).json({ error: 'password_too_short' });
+  if (pwErr === 'same_as_username') return res.status(400).json({ error: 'password_same_as_username' });
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existing) return res.status(409).json({ error: 'Username already exists' });
+  const emailTaken = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  if (emailTaken) return res.status(409).json({ error: 'email_taken' });
+  const validRole = role === 'admin' ? 'admin' : 'user';
   const { hash, salt } = hashPassword(password);
-  const result = db.prepare('INSERT INTO users (username, password_hash, salt, role) VALUES (?, ?, ?, ?)').run(username.trim(), hash, salt, validRole);
-  res.json({ id: result.lastInsertRowid, username: username.trim(), role: validRole });
+  const result = db.prepare('INSERT INTO users (username, password_hash, salt, role, email) VALUES (?, ?, ?, ?, ?)').run(username.trim(), hash, salt, validRole, email.trim());
+  res.json({ id: result.lastInsertRowid, username: username.trim(), email: email.trim(), role: validRole });
 });
 
 app.put('/api/users/:id', requireAdmin, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
-  const { username, password, role } = req.body;
+  const { username, password, role, email } = req.body;
   if (username !== undefined) {
     const existing = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, user.id);
     if (existing) return res.status(409).json({ error: 'Username already exists' });
     db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username.trim(), user.id);
   }
   if (password) {
+    const pwErr = validatePassword(password, username || user.username);
+    if (pwErr === 'too_short') return res.status(400).json({ error: 'password_too_short' });
+    if (pwErr === 'same_as_username') return res.status(400).json({ error: 'password_same_as_username' });
     const { hash, salt } = hashPassword(password);
     db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, user.id);
   }
@@ -558,7 +763,15 @@ app.put('/api/users/:id', requireAdmin, (req, res) => {
     const validRole = role === 'admin' ? 'admin' : 'user';
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(validRole, user.id);
   }
-  const updated = db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(user.id);
+  if (email !== undefined) {
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'email_invalid' });
+    if (email) {
+      const taken = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, user.id);
+      if (taken) return res.status(409).json({ error: 'email_taken' });
+    }
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email || null, user.id);
+  }
+  const updated = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(user.id);
   res.json(updated);
 });
 
@@ -568,6 +781,7 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
+  db.prepare('UPDATE customers SET created_by = NULL WHERE created_by = ?').run(userId);
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   res.json({ ok: true });
 });

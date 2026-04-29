@@ -1,5 +1,6 @@
 // === State ===
 let currentUser = null;
+let pendingResetToken = null;
 let timerState = 'stopped'; // stopped, running, paused
 let timerStart_ts = null;
 let timerPaused_ts = null;
@@ -9,6 +10,8 @@ let pipWindow = null;
 let pipInterval = null;
 let entriesData = [];
 let reportData = [];
+let entriesReqId = 0;
+let reportsReqId = 0;
 let sortField = 'date';
 let sortDir = 'desc';
 let editingUserId = null;
@@ -89,26 +92,16 @@ function clearTimerState() { localStorage.removeItem('tt_timer_state'); }
 // === Init ===
 document.addEventListener('DOMContentLoaded', async () => {
   const savedTheme = localStorage.getItem('tt_theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', savedTheme);
-  updateThemeButton(savedTheme);
+  if (savedTheme !== 'light' && !localStorage.getItem('tt_dark_variant')) {
+    localStorage.setItem('tt_dark_variant', savedTheme);
+  }
+  setTheme(savedTheme);
   setLang(currentLang);
 
-  const modeResp = await fetch('/auth/mode');
-  const { mode } = await modeResp.json();
-  if (mode === 'oidc') {
-    document.getElementById('login-local').style.display = 'none';
-    document.getElementById('login-oidc').style.display = '';
-  }
-
-  try {
-    const resp = await fetch('/auth/me');
-    if (resp.ok) { currentUser = await resp.json(); showApp(); }
-  } catch {}
-
+  // Event listeners (always set up)
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
-
   document.querySelectorAll('th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
       const field = th.dataset.sort;
@@ -117,15 +110,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderEntries();
     });
   });
-
   document.getElementById('login-pass').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
-
   document.getElementById('filter-customer').addEventListener('change', loadEntries);
   document.getElementById('filter-user').addEventListener('change', loadEntries);
-
-  // Description tag input
+  document.getElementById('filter-date-range').addEventListener('change', () => {
+    onDateRangeChange();
+    if (document.getElementById('filter-date-range').value !== 'custom') loadEntries();
+  });
+  document.getElementById('filter-from').addEventListener('change', loadEntries);
+  document.getElementById('filter-to').addEventListener('change', loadEntries);
+  document.getElementById('report-customer').addEventListener('change', loadReports);
+  document.getElementById('report-user').addEventListener('change', loadReports);
+  document.getElementById('report-date-range').addEventListener('change', () => {
+    onReportDateRangeChange();
+    if (document.getElementById('report-date-range').value !== 'custom') loadReports();
+  });
+  document.getElementById('report-from').addEventListener('change', loadReports);
+  document.getElementById('report-to').addEventListener('change', loadReports);
   document.getElementById('track-desc').addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -135,6 +138,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.target.value = '';
     }
   });
+
+  // Account modal: ESC to close
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const modal = document.getElementById('account-modal');
+    if (modal && modal.style.display !== 'none' && modal.style.display !== '') {
+      closeAccountModal();
+    }
+  });
+  // Account modal: click-outside to close
+  const accountModal = document.getElementById('account-modal');
+  if (accountModal) {
+    accountModal.addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeAccountModal();
+    });
+  }
+
+  // Check for password reset token in URL hash before normal auth flow
+  const resetMatch = location.hash.match(/^#reset\?token=([A-Za-z0-9_\-]+)$/);
+  if (resetMatch) {
+    pendingResetToken = resetMatch[1];
+    history.replaceState(null, '', location.pathname);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('reset-modal').style.display = '';
+    return;
+  }
+
+  const modeResp = await fetch('/auth/mode');
+  const { mode } = await modeResp.json();
+  if (mode === 'oidc') {
+    document.getElementById('login-local').style.display = 'none';
+    document.getElementById('login-oidc').style.display = '';
+  } else {
+    document.getElementById('forgot-link').style.display = '';
+  }
+
+  try {
+    const resp = await fetch('/auth/me');
+    if (resp.ok) { currentUser = await resp.json(); showApp(); }
+  } catch {}
 });
 
 // === Auth ===
@@ -164,14 +207,25 @@ async function doLogout() {
   document.getElementById('th-user').style.display = 'none';
   document.getElementById('filter-user').style.display = 'none';
   document.getElementById('report-user').style.display = 'none';
+  document.getElementById('account-btn').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = '';
 }
 
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
+  if (currentUser.email === null && currentUser.hasPassword) {
+    document.getElementById('email-required-modal').style.display = '';
+    return;
+  }
+  revealApp();
+}
+
+function revealApp() {
+  document.getElementById('email-required-modal').style.display = 'none';
   document.getElementById('app').style.display = '';
   document.getElementById('user-info').textContent = `${currentUser.username} (${currentUser.role})`;
+  document.getElementById('account-btn').style.display = '';
   if (currentUser.role === 'admin') {
     document.getElementById('tab-users').style.display = '';
     document.getElementById('th-user').style.display = '';
@@ -595,24 +649,90 @@ function addDescSection(text) {
 }
 
 // === Picture-in-Picture ===
+const PIP_PALETTE_TOKENS = [
+  '--bg', '--bg-card', '--bg-input', '--bg-header', '--bg-hover', '--bg-elevated',
+  '--text', '--text-muted', '--text-dim',
+  '--accent', '--accent-hover', '--accent-subtle', '--accent-glow',
+  '--danger', '--danger-subtle',
+  '--border', '--border-subtle',
+  '--radius', '--radius-sm', '--radius-lg',
+  '--shadow',
+];
+
+function buildPipPaletteCss() {
+  const cs = getComputedStyle(document.documentElement);
+  const decls = PIP_PALETTE_TOKENS
+    .map(name => `${name}: ${cs.getPropertyValue(name).trim()};`)
+    .filter(d => !d.endsWith(': ;'))
+    .join(' ');
+  return `:root { ${decls} }`;
+}
+
+function applyPipTheme(doc) {
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  doc.documentElement.setAttribute('data-theme', theme);
+  let paletteEl = doc.getElementById('pip-palette');
+  if (!paletteEl) {
+    paletteEl = doc.createElement('style');
+    paletteEl.id = 'pip-palette';
+    doc.head.insertBefore(paletteEl, doc.head.firstChild);
+  }
+  paletteEl.textContent = buildPipPaletteCss();
+}
+
 const pipStyles = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=Outfit:wght@400;500&display=swap');
-  body { font-family: 'DM Mono', monospace; background: #111110; color: #e8e4de; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; gap: 8px; padding: 10px; -webkit-font-smoothing: antialiased; box-sizing: border-box; }
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100vh; margin: 0; gap: 8px; padding: 10px;
+    -webkit-font-smoothing: antialiased; box-sizing: border-box;
+  }
   * { box-sizing: border-box; }
-  .pip-timer { font-size: 2.2rem; font-weight: 400; color: #e8e4de; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .pip-timer {
+    font-size: 2.2rem; font-weight: 400; color: var(--text);
+    font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+  }
   .pip-controls { display: flex; gap: 6px; }
-  .pip-controls button { padding: 5px 14px; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-family: 'Outfit', sans-serif; font-weight: 500; }
+  .pip-controls button {
+    padding: 5px 14px; border: none; border-radius: var(--radius-sm);
+    font-size: 0.8rem; cursor: pointer;
+    font-family: 'Outfit', sans-serif; font-weight: 500;
+  }
   .pip-controls button.hidden { display: none; }
-  #pip-play { background: #e5a845; color: #111; }
-  #pip-pause { background: #4a4640; color: #e8e4de; }
-  #pip-stop { background: transparent; border: 1px solid #d45145; color: #d45145; }
-  .pip-topic-input { width: 90%; padding: 5px 8px; border: 1px solid #333130; border-radius: 6px; background: #222120; color: #e8e4de; font-family: 'Outfit', sans-serif; font-size: 0.75rem; outline: none; }
-  .pip-topic-input:focus { border-color: #e5a845; }
-  .pip-topic-input::placeholder { color: #706b63; }
-  .pip-tags { display: flex; flex-wrap: wrap; gap: 3px; width: 90%; justify-content: center; max-height: 40px; overflow-y: auto; }
-  .pip-tag { display: inline-flex; align-items: center; gap: 3px; background: rgba(229,168,69,0.12); color: #e5a845; padding: 1px 6px; border-radius: 99px; font-size: 0.65rem; font-family: 'Outfit', sans-serif; border: 1px solid rgba(229,168,69,0.15); }
+  #pip-play  { background: var(--accent); color: var(--bg); }
+  #pip-play:hover  { background: var(--accent-hover); }
+  #pip-pause { background: var(--bg-hover); color: var(--text); }
+  #pip-pause:hover { background: var(--bg-elevated); }
+  #pip-stop  { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+  #pip-stop:hover  { background: var(--danger-subtle); }
+  .pip-topic-input {
+    width: 90%; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-input); color: var(--text);
+    font-family: 'Outfit', sans-serif; font-size: 0.75rem; outline: none;
+  }
+  .pip-topic-input:focus { border-color: var(--accent); }
+  .pip-topic-input::placeholder { color: var(--text-dim); }
+  .pip-tags {
+    display: flex; flex-wrap: wrap; gap: 3px; width: 90%;
+    justify-content: center; max-height: 40px; overflow-y: auto;
+  }
+  .pip-tag {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: var(--accent-subtle); color: var(--accent);
+    padding: 1px 6px; border-radius: 99px; font-size: 0.65rem;
+    font-family: 'Outfit', sans-serif; border: 1px solid var(--accent-subtle);
+  }
   .pip-tag-x { cursor: pointer; opacity: 0.6; font-size: 0.7rem; }
   .pip-tag-x:hover { opacity: 1; }
+  [data-theme="terminal"] body {
+    background:
+      radial-gradient(circle at 1px 1px, rgba(0, 212, 170, 0.04) 1px, transparent 0) 0 0 / 24px 24px,
+      var(--bg);
+  }
 `;
 
 function openPiP() {
@@ -620,6 +740,7 @@ function openPiP() {
     window.documentPictureInPicture.requestWindow({ width: 340, height: 240 }).then(win => {
       pipWindow = win;
       const doc = win.document;
+      applyPipTheme(doc);
       const style = doc.createElement('style');
       style.textContent = pipStyles;
       doc.head.appendChild(style);
@@ -657,13 +778,14 @@ function openPipPopup() {
   const popup = window.open('', 'pip-timer', 'width=340,height=240,toolbar=no,menubar=no');
   if (!popup) return;
   pipWindow = popup;
-  popup.document.write(`<!DOCTYPE html><html><head><style>${pipStyles}</style></head><body>
+  popup.document.write(`<!DOCTYPE html><html><head><style id="pip-palette"></style><style>${pipStyles}</style></head><body>
     <div class="pip-timer" id="pip-time">${document.getElementById('timer-display').textContent}</div>
     <div class="pip-controls"><button id="pip-play">▶</button><button id="pip-pause">⏸</button><button id="pip-stop">⏹</button></div>
     <div class="pip-tags" id="pip-tags"></div>
     <input type="text" class="pip-topic-input" id="pip-topic" placeholder="${t('descriptionPh')}">
   </body></html>`);
   popup.document.close();
+  applyPipTheme(popup.document);
   popup.document.getElementById('pip-play').onclick = () => { if (timerState === 'stopped') timerStart(); else if (timerState === 'paused') timerResume(); };
   popup.document.getElementById('pip-pause').onclick = () => { if (timerState === 'running') timerPause(); };
   popup.document.getElementById('pip-stop').onclick = () => timerStop();
@@ -744,14 +866,29 @@ function showNotification(msg) {
 }
 
 // === Theme ===
-function toggleTheme() {
-  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('tt_theme', next);
-  updateThemeButton(next);
+function setTheme(name) {
+  document.documentElement.setAttribute('data-theme', name);
+  localStorage.setItem('tt_theme', name);
+  if (name !== 'light') localStorage.setItem('tt_dark_variant', name);
+  document.querySelectorAll('.theme-toggle').forEach(btn => {
+    btn.textContent = name === 'light' ? '🌙' : '☀️';
+  });
+  document.querySelectorAll('[data-theme-pick]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-theme-pick') === name);
+  });
+  if (pipWindow) {
+    try { applyPipTheme(pipWindow.document); }
+    catch { pipWindow = null; }
+  }
 }
-function updateThemeButton(theme) {
-  document.getElementById('theme-toggle').textContent = theme === 'dark' ? '🌙' : '☀️';
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  if (current === 'light') {
+    setTheme(localStorage.getItem('tt_dark_variant') || 'dark');
+  } else {
+    setTheme('light');
+  }
 }
 
 // === Date range helpers ===
@@ -781,6 +918,7 @@ function onReportDateRangeChange() {
 
 // === Entries ===
 async function loadEntries() {
+  const myId = ++entriesReqId;
   const { dateFrom, dateTo } = getDateRange('filter-date-range', 'filter-from', 'filter-to');
   const customerId = document.getElementById('filter-customer').value;
   const userId = document.getElementById('filter-user').value;
@@ -791,7 +929,9 @@ async function loadEntries() {
   if (userId) params.set('userId', userId);
   try {
     const resp = await fetch(`/api/entries?${params}`);
-    entriesData = await resp.json();
+    const data = await resp.json();
+    if (myId !== entriesReqId) return;
+    entriesData = data;
     renderEntries();
   } catch {}
 }
@@ -940,6 +1080,7 @@ async function saveManualEntry() {
 
 // === Reports ===
 async function loadReports() {
+  const myId = ++reportsReqId;
   const { dateFrom, dateTo } = getDateRange('report-date-range', 'report-from', 'report-to');
   const customerId = document.getElementById('report-customer').value;
   const userId = document.getElementById('report-user').value;
@@ -950,7 +1091,9 @@ async function loadReports() {
   if (userId) params.set('userId', userId);
   try {
     const resp = await fetch(`/api/entries?${params}`);
-    reportData = await resp.json();
+    const data = await resp.json();
+    if (myId !== reportsReqId) return;
+    reportData = data;
     const totalEntries = reportData.length;
     const totalMinutes = reportData.reduce((s, e) => s + e.minutes, 0);
     document.getElementById('rpt-total').textContent = totalEntries;
@@ -1057,10 +1200,11 @@ async function loadUsers() {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${esc(u.username)}</td>
+        <td>${esc(u.email || '')}</td>
         <td>${esc(u.role)}</td>
         <td>${u.created_at ? u.created_at.slice(0, 10) : ''}</td>
         <td>
-          <button onclick="editUser(${u.id}, '${esc(u.username)}', '${esc(u.role)}')">${t('edit')}</button>
+          <button onclick="editUser(${u.id}, '${esc(u.username)}', '${esc(u.role)}', '${esc(u.email || '')}')">${t('edit')}</button>
           <button class="btn-danger" onclick="deleteUser(${u.id})">${t('delete')}</button>
         </td>
       `;
@@ -1073,17 +1217,21 @@ function showAddUser() {
   editingUserId = null;
   document.getElementById('user-modal-title').textContent = t('addUser');
   document.getElementById('modal-username').value = '';
+  document.getElementById('modal-email').value = '';
   document.getElementById('modal-password').value = '';
   document.getElementById('modal-role').value = 'user';
+  document.getElementById('user-modal-error').textContent = '';
   document.getElementById('user-modal').style.display = '';
 }
 
-function editUser(id, username, role) {
+function editUser(id, username, role, email) {
   editingUserId = id;
   document.getElementById('user-modal-title').textContent = t('editUser');
   document.getElementById('modal-username').value = username;
+  document.getElementById('modal-email').value = email || '';
   document.getElementById('modal-password').value = '';
   document.getElementById('modal-role').value = role;
+  document.getElementById('user-modal-error').textContent = '';
   document.getElementById('user-modal').style.display = '';
 }
 
@@ -1093,14 +1241,25 @@ async function saveUser() {
   const username = document.getElementById('modal-username').value.trim();
   const password = document.getElementById('modal-password').value;
   const role = document.getElementById('modal-role').value;
+  const email = document.getElementById('modal-email').value.trim();
+  const errEl = document.getElementById('user-modal-error');
+  errEl.textContent = '';
   if (!username) return;
+  let resp;
   if (editingUserId) {
     const body = { username, role };
     if (password) body.password = password;
-    await fetch(`/api/users/${editingUserId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (email) body.email = email;
+    resp = await fetch(`/api/users/${editingUserId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   } else {
     if (!password) return;
-    await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role }) });
+    resp = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role, email }) });
+  }
+  if (!resp.ok) {
+    const data = await resp.json();
+    const msgs = { email_invalid: t('emailInvalid'), email_taken: t('emailTaken'), password_too_short: t('passwordTooShort'), password_same_as_username: t('passwordSameAsUsername') };
+    errEl.textContent = msgs[data.error] || data.error;
+    return;
   }
   closeUserModal(); loadUsers(); loadUserFilters();
 }
@@ -1109,6 +1268,155 @@ async function deleteUser(id) {
   if (!confirm(t('confirmDeleteUser'))) return;
   await fetch(`/api/users/${id}`, { method: 'DELETE' });
   loadUsers(); loadUserFilters();
+}
+
+// === Account modal ===
+function showAccountModal() {
+  document.getElementById('account-email-display').value = currentUser.email || '';
+  const hasPassword = currentUser.hasPassword;
+  document.getElementById('account-sso-banner').style.display = hasPassword ? 'none' : '';
+  document.getElementById('account-change-email-btn').style.display = hasPassword ? '' : 'none';
+  document.getElementById('account-change-pw-btn').style.display = hasPassword ? '' : 'none';
+  showAccountMain();
+  document.getElementById('account-modal').style.display = '';
+}
+
+function showAccountMain() {
+  document.getElementById('account-main').style.display = '';
+  document.getElementById('account-email-form').style.display = 'none';
+  document.getElementById('account-pw-form').style.display = 'none';
+}
+
+function showAccountChangeEmail() {
+  document.getElementById('account-new-email').value = '';
+  document.getElementById('account-email-current-pw').value = '';
+  document.getElementById('account-email-error').textContent = '';
+  document.getElementById('account-email-pw-row').style.display = currentUser.email ? '' : 'none';
+  document.getElementById('account-main').style.display = 'none';
+  document.getElementById('account-email-form').style.display = '';
+}
+
+function showAccountChangePassword() {
+  document.getElementById('account-current-pw').value = '';
+  document.getElementById('account-new-pw').value = '';
+  document.getElementById('account-confirm-pw').value = '';
+  document.getElementById('account-pw-error').textContent = '';
+  document.getElementById('account-main').style.display = 'none';
+  document.getElementById('account-pw-form').style.display = '';
+}
+
+function closeAccountModal() {
+  document.getElementById('account-modal').style.display = 'none';
+}
+
+async function submitChangePassword() {
+  const current_password = document.getElementById('account-current-pw').value;
+  const new_password = document.getElementById('account-new-pw').value;
+  const confirm_password = document.getElementById('account-confirm-pw').value;
+  const errEl = document.getElementById('account-pw-error');
+  errEl.textContent = '';
+  if (new_password !== confirm_password) { errEl.textContent = t('passwordsDontMatch'); return; }
+  const resp = await fetch('/auth/change-password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password, new_password })
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const msgs = { password_too_short: t('passwordTooShort'), password_same_as_username: t('passwordSameAsUsername') };
+    errEl.textContent = msgs[data.error] || data.error;
+    return;
+  }
+  closeAccountModal();
+}
+
+async function submitChangeEmail() {
+  const new_email = document.getElementById('account-new-email').value.trim();
+  const current_password = document.getElementById('account-email-current-pw').value;
+  const errEl = document.getElementById('account-email-error');
+  errEl.textContent = '';
+  const body = { new_email };
+  if (currentUser.email) body.current_password = current_password;
+  const resp = await fetch('/auth/change-email', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const msgs = { email_invalid: t('emailInvalid'), email_taken: t('emailTaken') };
+    errEl.textContent = msgs[data.error] || data.error;
+    return;
+  }
+  currentUser.email = data.email;
+  document.getElementById('account-email-display').value = data.email;
+  showAccountMain();
+}
+
+// === Forgot / Reset password ===
+function showForgotModal() {
+  document.getElementById('forgot-email').value = '';
+  document.getElementById('forgot-error').textContent = '';
+  document.getElementById('forgot-form').style.display = '';
+  document.getElementById('forgot-success').style.display = 'none';
+  document.getElementById('forgot-modal').style.display = '';
+}
+
+function closeForgotModal() {
+  document.getElementById('forgot-modal').style.display = 'none';
+}
+
+async function submitForgot() {
+  const email = document.getElementById('forgot-email').value.trim();
+  const errEl = document.getElementById('forgot-error');
+  errEl.textContent = '';
+  if (!email) { errEl.textContent = t('emailInvalid'); return; }
+  const resp = await fetch('/auth/forgot-password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, lang: currentLang })
+  });
+  if (resp.ok) {
+    document.getElementById('forgot-form').style.display = 'none';
+    document.getElementById('forgot-success').style.display = '';
+  }
+}
+
+async function submitReset() {
+  const new_password = document.getElementById('reset-new-pw').value;
+  const confirm_password = document.getElementById('reset-confirm-pw').value;
+  const errEl = document.getElementById('reset-error');
+  errEl.textContent = '';
+  if (new_password !== confirm_password) { errEl.textContent = t('passwordsDontMatch'); return; }
+  const resp = await fetch('/auth/reset-password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: pendingResetToken, new_password })
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const msgs = { invalid_token: t('invalidToken'), password_too_short: t('passwordTooShort'), password_same_as_username: t('passwordSameAsUsername') };
+    errEl.textContent = msgs[data.error] || data.error;
+    return;
+  }
+  pendingResetToken = null;
+  document.getElementById('reset-modal').style.display = 'none';
+  document.getElementById('login-screen').style.display = '';
+}
+
+// === Email required ===
+async function submitRequiredEmail() {
+  const new_email = document.getElementById('email-required-input').value.trim();
+  const errEl = document.getElementById('email-required-error');
+  errEl.textContent = '';
+  const resp = await fetch('/auth/change-email', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_email })
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const msgs = { email_invalid: t('emailInvalid'), email_taken: t('emailTaken') };
+    errEl.textContent = msgs[data.error] || data.error;
+    return;
+  }
+  currentUser.email = data.email;
+  revealApp();
 }
 
 // === Utility ===
