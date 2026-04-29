@@ -148,6 +148,12 @@ All configuration is via environment variables. Copy `.env.example` to `.env` to
 | `SMTP_FROM` | `ClockClock <noreply@example.com>` | From address on outgoing emails |
 | `RESET_TOKEN_TTL_MIN` | `60` | Password-reset link lifetime in minutes |
 
+### Email / Password Reset
+
+When `SMTP_HOST` is not set, the server runs in **dev mode**: no email is sent, and the reset link is printed to stdout instead. This is intentional for local development so you can test the flow without an SMTP server.
+
+In production (`NODE_ENV=production`), the server will **refuse to start** if `SMTP_HOST` is missing — reset emails cannot be silently lost in production.
+
 ### OIDC / SSO
 
 Set `AUTH_MODE=oidc` to enable single sign-on. Compatible with Keycloak, Authentik, Azure AD, and any standard OIDC provider.
