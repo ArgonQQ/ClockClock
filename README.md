@@ -70,8 +70,10 @@ Most time tracking tools are SaaS with monthly fees, data stored on someone else
 - **Multi-user support** — role-based access control (admin and user roles)
 - **SSO / OIDC** — integrate with Keycloak, Authentik, Azure AD, or any OIDC provider
 - **English & German** — language switcher with no page reload
-- **Dark and light theme** — persistent per-user preference
-- **Self-contained** — SQLite database, no external services required
+- **Three themes** — Dark, Light, and Terminal; toggle with the header button or pick from the Account modal; mini timer window follows the active theme live
+- **Account management** — users can change their email address and password from within the app
+- **Password reset** — forgot-password flow sends a one-time reset link via email (requires SMTP configuration)
+- **Self-contained** — SQLite database; no external services required unless email is enabled
 
 ---
 
@@ -137,6 +139,14 @@ All configuration is via environment variables. Copy `.env.example` to `.env` to
 | `AUTH_MODE` | `local` | Authentication mode: `local` or `oidc` |
 | `ADMIN_USER` | `admin` | Username of the default admin account |
 | `ADMIN_PASSWORD` | *(generated)* | Password for the default admin — printed to stdout on first run if not set |
+| `APP_BASE_URL` | `http://localhost:PORT` | Public base URL used in password-reset email links |
+| `SMTP_HOST` | *(unset)* | SMTP server hostname — password reset emails are disabled when unset |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_SECURE` | `false` | Set to `true` for TLS (port 465) |
+| `SMTP_USER` | *(unset)* | SMTP username |
+| `SMTP_PASS` | *(unset)* | SMTP password |
+| `SMTP_FROM` | `ClockClock <noreply@example.com>` | From address on outgoing emails |
+| `RESET_TOKEN_TTL_MIN` | `60` | Password-reset link lifetime in minutes |
 
 ### OIDC / SSO
 
@@ -175,6 +185,8 @@ The suite covers:
 - **Customer isolation** — users can only see and edit their own customers; admins can see all
 - **Entry isolation** — users can only see and edit their own entries; admins can see all
 - **Referential integrity** — customers with associated entries cannot be deleted
+- **Password & email changes** — users can update their own credentials; old sessions are invalidated
+- **Password policy** — enforces minimum length and blocks passwords matching the username
 
 ```
 ClockClock Test Suite
@@ -207,8 +219,8 @@ This creates three users with pre-loaded time entries across six clients:
 | User | Password | Clients |
 |---|---|---|
 | `admin` | *(your ADMIN_PASSWORD)* | Hofmann Metallbau GmbH, Lindgren & Partners |
-| `sarah.mueller` | `sarah2026` | Café Morgenrot, Dr. Petersen Zahnarztpraxis |
-| `tom.brenner` | `tom2026` | Vinotek GmbH, Nowak Transport Sp. z o.o. |
+| `sarah.mueller` | `sarah2026secure` | Café Morgenrot, Dr. Petersen Zahnarztpraxis |
+| `tom.brenner` | `tom2026secure` | Vinotek GmbH, Nowak Transport Sp. z o.o. |
 
 ---
 
@@ -220,6 +232,7 @@ This creates three users with pre-loaded time entries across six clients:
 | Database | SQLite via `better-sqlite3` |
 | Frontend | Vanilla JavaScript, HTML, CSS — no build step |
 | Auth | Scrypt password hashing, server-side sessions, OIDC |
+| Email | Nodemailer (optional SMTP — only needed for password reset) |
 | Container | Docker, multi-arch (linux/amd64, linux/arm64) |
 
 ---
