@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Generated from semantic-release release notes; future entries will be appended automatically.
 
-## [0.4.2](https://github.com/ArgonQQ/ClockClock/compare/v0.4.1...v0.4.2) (2026-04-30)
+## [0.4.3](https://github.com/ArgonQQ/ClockClock/compare/v0.4.2...v0.4.3) (2026-04-30)
 
 ### Bug Fixes
 
