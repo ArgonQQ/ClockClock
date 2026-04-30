@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Generated from semantic-release release notes; future entries will be appended automatically.
 
+## [0.4.2](https://github.com/ArgonQQ/ClockClock/compare/v0.4.1...v0.4.2) (2026-04-30)
+
+### Bug Fixes
+
+- copy mailer.js into Docker image to resolve `Cannot find module './mailer'` at container startup ([2c7d3e9](https://github.com/ArgonQQ/ClockClock/commit/2c7d3e9))
+
 ## [0.4.1](https://github.com/ArgonQQ/ClockClock/compare/v0.4.0...v0.4.1) (2026-04-29)
 
 Maintenance tag. The previous `v0.4.0` tag pointed at an orphaned commit after a history rewrite, which blocked semantic-release from creating new releases. `v0.4.1` re-anchors the release pointer to the current `main` HEAD so the pipeline can resume.
