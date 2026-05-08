@@ -1150,7 +1150,8 @@ function exportReportPdf() {
   else if (range === 'custom') {
     const from = document.getElementById('report-from').value;
     const to = document.getElementById('report-to').value;
-    dateLabel = `${from || '...'} — ${to || '...'}`;
+    const fmt = iso => iso ? iso.split('-').reverse().join('-') : '...';
+    dateLabel = `${fmt(from)} — ${fmt(to)}`;
   }
 
   const byCustomer = {};
@@ -1163,7 +1164,14 @@ function exportReportPdf() {
 
   const getCustomerInfo = (custId) => customersList.find(c => c.id === custId) || {};
 
-  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title> </title>
+  const selectedCustomerId = document.getElementById('report-customer').value;
+  const selectedCustomer = selectedCustomerId
+    ? customersList.find(c => String(c.id) === String(selectedCustomerId))
+    : null;
+  const customerLabel = selectedCustomer ? selectedCustomer.name : t('allCustomers');
+  const docTitle = `${customerLabel} - ${dateLabel}`;
+
+  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(docTitle)}</title>
   <style>
     body { font-family: Arial, sans-serif; font-size: 11px; color: #222; margin: 20px; }
     .date-range { font-size: 12px; color: #666; margin-bottom: 16px; }
