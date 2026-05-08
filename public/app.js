@@ -1119,7 +1119,6 @@ async function loadReports() {
     const totalMinutes = reportData.reduce((s, e) => s + e.minutes, 0);
     document.getElementById('rpt-total').textContent = totalEntries;
     document.getElementById('rpt-hours-fmt').textContent = formatDuration(totalMinutes);
-    document.getElementById('rpt-hours').textContent = (totalMinutes / 60).toFixed(1);
     document.getElementById('rpt-minutes').textContent = totalMinutes;
     const byCustomer = {};
     reportData.forEach(e => {
