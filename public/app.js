@@ -1174,6 +1174,8 @@ function exportReportPdf() {
     table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
     th { text-align: left; border-bottom: 1px solid #ccc; padding: 3px 6px; font-size: 10px; color: #666; }
     td { padding: 3px 6px; border-bottom: 1px solid #eee; font-size: 11px; }
+    td.desc { overflow-wrap: anywhere; word-break: break-word; }
+    td.dur { white-space: nowrap; }
     .total-row { font-weight: bold; border-top: 1px solid #999; }
     .grand-total { margin-top: 16px; font-size: 12px; font-weight: bold; border-top: 2px solid #333; padding-top: 6px; }
   </style></head><body>`;
@@ -1195,9 +1197,9 @@ function exportReportPdf() {
     if (parts.length) html += `<div class="customer-info">${esc(parts.join(' | '))}</div>`;
     html += `<table><thead><tr><th>${t('thDate')}</th><th>${t('thFrom')}</th><th>${t('thTo')}</th><th>${t('thMinutes')}</th><th>${t('thDuration')}</th><th>${t('thDescription')}</th></tr></thead><tbody>`;
     group.entries.sort((a, b) => a.date.localeCompare(b.date) || a.time_from.localeCompare(b.time_from)).forEach(e => {
-      html += `<tr><td>${e.date}</td><td>${e.time_from}</td><td>${e.time_to}</td><td>${e.minutes}</td><td>${formatDuration(e.minutes)}</td><td>${esc(e.description)}</td></tr>`;
+      html += `<tr><td>${e.date}</td><td>${e.time_from}</td><td>${e.time_to}</td><td>${e.minutes}</td><td class="dur">${formatDuration(e.minutes)}</td><td class="desc">${esc(e.description)}</td></tr>`;
     });
-    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${group.minutes}</td><td>${formatDuration(group.minutes)} / ${(group.minutes / 60).toFixed(1)} h</td><td></td></tr>`;
+    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${group.minutes}</td><td class="dur">${formatDuration(group.minutes)} / ${(group.minutes / 60).toFixed(1)} h</td><td></td></tr>`;
     html += `</tbody></table></div>`;
   });
 
