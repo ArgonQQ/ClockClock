@@ -154,6 +154,31 @@ When `SMTP_HOST` is not set, the server runs in **dev mode**: no email is sent, 
 
 In production (`NODE_ENV=production`), the server will **refuse to start** if `SMTP_HOST` is missing — reset emails cannot be silently lost in production.
 
+### Resetting the Admin Password
+
+If you lose access to the admin account, run the bundled reset script. It generates a new random password, prints it to stdout, and updates the admin user in the database. After logging in, change the password from the Account modal.
+
+```bash
+# Docker
+docker exec clockclock node scripts/reset-admin-password.js
+
+# Manual / local
+node scripts/reset-admin-password.js
+```
+
+Output:
+
+```
+============================================
+  Admin password reset
+  Username: admin
+  Password: kJ8x3nZqW2vP
+============================================
+Log in and change this via the Account modal.
+```
+
+The script only resets accounts with the `admin` role, and respects the `ADMIN_USER` and `DB_PATH` environment variables.
+
 ### OIDC / SSO
 
 Set `AUTH_MODE=oidc` to enable single sign-on. Compatible with Keycloak, Authentik, Azure AD, and any standard OIDC provider.
@@ -240,6 +265,12 @@ This creates three users with pre-loaded time entries across six clients:
 | Auth | Scrypt password hashing, server-side sessions, OIDC |
 | Email | Nodemailer (optional SMTP — only needed for password reset) |
 | Container | Docker, multi-arch (linux/amd64, linux/arm64) |
+
+---
+
+## Feature Requests
+
+Have an idea? Open a [feature request issue](https://github.com/ArgonQQ/ClockClock/issues/new?template=feature_request.md). The template asks for the problem, the proposed solution, and any alternatives — that context makes it much easier to evaluate and prioritize.
 
 ---
 
