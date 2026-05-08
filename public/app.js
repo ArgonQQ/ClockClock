@@ -1118,8 +1118,8 @@ async function loadReports() {
     const totalEntries = reportData.length;
     const totalMinutes = reportData.reduce((s, e) => s + e.minutes, 0);
     document.getElementById('rpt-total').textContent = totalEntries;
+    document.getElementById('rpt-hours-fmt').textContent = formatDuration(totalMinutes);
     document.getElementById('rpt-minutes').textContent = totalMinutes;
-    document.getElementById('rpt-hours').textContent = (totalMinutes / 60).toFixed(1);
     const byCustomer = {};
     reportData.forEach(e => {
       const name = e.customer_name || e.customer;
@@ -1132,7 +1132,7 @@ async function loadReports() {
     Object.keys(byCustomer).sort().forEach(c => {
       const { count, minutes } = byCustomer[c];
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${esc(c)}</td><td>${count}</td><td>${minutes}</td><td>${(minutes / 60).toFixed(1)}</td>`;
+      tr.innerHTML = `<td>${esc(c)}</td><td>${count}</td><td>${formatDuration(minutes)}</td><td>${(minutes / 60).toFixed(1)}</td>`;
       tbody.appendChild(tr);
     });
   } catch {}
@@ -1173,6 +1173,8 @@ function exportReportPdf() {
     table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
     th { text-align: left; border-bottom: 1px solid #ccc; padding: 3px 6px; font-size: 10px; color: #666; }
     td { padding: 3px 6px; border-bottom: 1px solid #eee; font-size: 11px; }
+    td.desc { overflow-wrap: anywhere; word-break: break-word; }
+    td.dur { white-space: nowrap; }
     .total-row { font-weight: bold; border-top: 1px solid #999; }
     .grand-total { margin-top: 16px; font-size: 12px; font-weight: bold; border-top: 2px solid #333; padding-top: 6px; }
   </style></head><body>`;
@@ -1192,15 +1194,15 @@ function exportReportPdf() {
     const addrParts = [info.address, info.zip, info.city, info.country].filter(Boolean);
     if (addrParts.length) parts.push(addrParts.join(', '));
     if (parts.length) html += `<div class="customer-info">${esc(parts.join(' | '))}</div>`;
-    html += `<table><thead><tr><th>${t('thDate')}</th><th>${t('thFrom')}</th><th>${t('thTo')}</th><th>${t('thMinutes')}</th><th>${t('thDescription')}</th></tr></thead><tbody>`;
+    html += `<table><thead><tr><th>${t('thDate')}</th><th>${t('thFrom')}</th><th>${t('thTo')}</th><th>${t('thMinutes')}</th><th>${t('thDuration')}</th><th>${t('thDescription')}</th></tr></thead><tbody>`;
     group.entries.sort((a, b) => a.date.localeCompare(b.date) || a.time_from.localeCompare(b.time_from)).forEach(e => {
-      html += `<tr><td>${e.date}</td><td>${e.time_from}</td><td>${e.time_to}</td><td>${e.minutes}</td><td>${esc(e.description)}</td></tr>`;
+      html += `<tr><td>${e.date}</td><td>${e.time_from}</td><td>${e.time_to}</td><td>${e.minutes}</td><td class="dur">${formatDuration(e.minutes)}</td><td class="desc">${esc(e.description)}</td></tr>`;
     });
-    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${group.minutes}</td><td>${(group.minutes / 60).toFixed(1)} h</td></tr>`;
+    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${group.minutes}</td><td class="dur">${formatDuration(group.minutes)} / ${(group.minutes / 60).toFixed(1)} h</td><td></td></tr>`;
     html += `</tbody></table></div>`;
   });
 
-  html += `<div class="grand-total">${t('total')}: ${grandMinutes} min / ${(grandMinutes / 60).toFixed(1)} h</div>`;
+  html += `<div class="grand-total">${t('total')}: ${(grandMinutes / 60).toFixed(1)} h / ${formatDuration(grandMinutes)}</div>`;
   html += `</body></html>`;
 
   const win = window.open('', '_blank');
@@ -1441,6 +1443,17 @@ async function submitRequiredEmail() {
 }
 
 // === Utility ===
+function formatDuration(minutes) {
+  const m = Math.max(0, Math.round(Number(minutes) || 0));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  const hU = t('hUnit');
+  const mU = t('minUnit');
+  const sep = currentLang === 'de' ? ' ' : '';
+  if (r === 0) return `${h}${sep}${hU}`;
+  return `${h}${sep}${hU} ${r}${sep}${mU}`;
+}
+
 function esc(str) {
   if (!str) return '';
   const div = document.createElement('div');

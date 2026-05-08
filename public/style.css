@@ -731,6 +731,13 @@ td button {
   letter-spacing: 0.02em;
 }
 
+.card-sub {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.15rem;
+}
+
 .card-label {
   font-size: 0.75rem;
   font-weight: 500;

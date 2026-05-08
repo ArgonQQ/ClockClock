@@ -64,6 +64,9 @@ const translations = {
     totalEntries: 'Total Entries',
     totalMinutes: 'Total Minutes',
     totalHours: 'Total Hours',
+    hUnit: 'h',
+    minUnit: 'min',
+    thDuration: 'Duration',
 
     // Modals
     saveEntry: 'Save Entry',
@@ -200,6 +203,9 @@ const translations = {
     totalEntries: 'Gesamteinträge',
     totalMinutes: 'Gesamtminuten',
     totalHours: 'Gesamtstunden',
+    hUnit: 'Std',
+    minUnit: 'Min',
+    thDuration: 'Dauer',
 
     saveEntry: 'Eintrag speichern',
     addEntry: 'Eintrag hinzufügen',
