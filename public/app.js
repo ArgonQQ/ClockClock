@@ -1197,7 +1197,7 @@ function exportReportPdf() {
     group.entries.sort((a, b) => a.date.localeCompare(b.date) || a.time_from.localeCompare(b.time_from)).forEach(e => {
       html += `<tr><td>${e.date}</td><td>${e.time_from}</td><td>${e.time_to}</td><td>${e.minutes}</td><td>${formatDuration(e.minutes)}</td><td>${esc(e.description)}</td></tr>`;
     });
-    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td></td><td>${formatDuration(group.minutes)} / ${(group.minutes / 60).toFixed(1)} h</td><td></td></tr>`;
+    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${group.minutes}</td><td>${formatDuration(group.minutes)} / ${(group.minutes / 60).toFixed(1)} h</td><td></td></tr>`;
     html += `</tbody></table></div>`;
   });
 
