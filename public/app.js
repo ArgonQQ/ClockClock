@@ -155,6 +155,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('report-from').addEventListener('change', loadReports);
   document.getElementById('report-to').addEventListener('change', loadReports);
+  const groupbySel = document.getElementById('report-groupby');
+  groupbySel.value = localStorage.getItem('tt_report_groupby') || 'customer';
+  groupbySel.addEventListener('change', () => {
+    localStorage.setItem('tt_report_groupby', groupbySel.value);
+    loadReports();
+  });
   document.getElementById('track-desc').addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -1100,6 +1106,25 @@ async function saveManualEntry() {
 }
 
 // === Reports ===
+function buildReportBlocks(entries, mode) {
+  const groups = {};
+  entries.forEach(e => {
+    const key = mode === 'date' ? e.date : (e.customer_name || e.customer);
+    if (!groups[key]) groups[key] = { entries: [], minutes: 0, customerId: e.customer_id };
+    groups[key].entries.push(e);
+    groups[key].minutes += e.minutes;
+  });
+  return Object.keys(groups).sort().map(key => {
+    const g = groups[key];
+    if (mode === 'date') {
+      g.entries.sort((a, b) => a.time_from.localeCompare(b.time_from));
+    } else {
+      g.entries.sort((a, b) => a.date.localeCompare(b.date) || a.time_from.localeCompare(b.time_from));
+    }
+    return { title: key, customerId: g.customerId, entries: g.entries, subtotalMinutes: g.minutes };
+  });
+}
+
 async function loadReports() {
   const myId = ++reportsReqId;
   const { dateFrom, dateTo } = getDateRange('report-date-range', 'report-from', 'report-to');
@@ -1120,21 +1145,75 @@ async function loadReports() {
     document.getElementById('rpt-total').textContent = totalEntries;
     document.getElementById('rpt-hours-fmt').textContent = formatDuration(totalMinutes);
     document.getElementById('rpt-minutes').textContent = totalMinutes;
-    const byCustomer = {};
-    reportData.forEach(e => {
-      const name = e.customer_name || e.customer;
-      if (!byCustomer[name]) byCustomer[name] = { count: 0, minutes: 0, id: e.customer_id };
-      byCustomer[name].count++;
-      byCustomer[name].minutes += e.minutes;
+
+    const mode = document.getElementById('report-groupby').value;
+    const blocks = buildReportBlocks(reportData, mode);
+    const container = document.getElementById('report-blocks');
+    container.innerHTML = '';
+
+    if (blocks.length === 0) return;
+
+    blocks.forEach(block => {
+      const wrap = document.createElement('div');
+      wrap.className = 'report-group';
+
+      const header = document.createElement('div');
+      header.className = 'group-header';
+      header.textContent = block.title;
+      wrap.appendChild(header);
+
+      if (mode === 'customer') {
+        const info = customersList.find(c => c.id === block.customerId) || {};
+        const parts = [];
+        if (info.contact_person) parts.push(info.contact_person);
+        if (info.email) parts.push(info.email);
+        if (info.phone) parts.push(info.phone);
+        const addrParts = [info.address, info.zip, info.city, info.country].filter(Boolean);
+        if (addrParts.length) parts.push(addrParts.join(', '));
+        if (parts.length) {
+          const infoEl = document.createElement('div');
+          infoEl.className = 'group-contact';
+          infoEl.textContent = parts.join(' | ');
+          wrap.appendChild(infoEl);
+        }
+      }
+
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'table-wrap';
+      const table = document.createElement('table');
+
+      const colHeader = mode === 'date' ? t('thCustomer') : t('thDate');
+      table.innerHTML = `<thead><tr>
+        <th>${colHeader}</th>
+        <th>${t('thFrom')}</th><th>${t('thTo')}</th>
+        <th>${t('thMinutes')}</th><th>${t('thDuration')}</th>
+        <th>${t('thDescription')}</th>
+      </tr></thead>`;
+
+      const tbody = document.createElement('tbody');
+      block.entries.forEach(e => {
+        const tr = document.createElement('tr');
+        const firstCol = mode === 'date' ? esc(e.customer_name || e.customer) : esc(e.date);
+        tr.innerHTML = `<td>${firstCol}</td><td>${esc(e.time_from)}</td><td>${esc(e.time_to)}</td><td>${e.minutes}</td><td>${formatDuration(e.minutes)}</td><td>${esc(e.description)}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      const subtotalTr = document.createElement('tr');
+      subtotalTr.className = 'subtotal-row';
+      subtotalTr.innerHTML = `<td colspan="3">${t('total')}</td><td>${block.subtotalMinutes}</td><td>${formatDuration(block.subtotalMinutes)} / ${(block.subtotalMinutes / 60).toFixed(1)} h</td><td></td>`;
+      tbody.appendChild(subtotalTr);
+
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+      wrap.appendChild(tableWrap);
+      container.appendChild(wrap);
     });
-    const tbody = document.getElementById('report-body');
-    tbody.innerHTML = '';
-    Object.keys(byCustomer).sort().forEach(c => {
-      const { count, minutes } = byCustomer[c];
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${esc(c)}</td><td>${count}</td><td>${formatDuration(minutes)}</td><td>${(minutes / 60).toFixed(1)}</td>`;
-      tbody.appendChild(tr);
-    });
+
+    const grandMinutes = reportData.reduce((s, e) => s + e.minutes, 0);
+    const grandEl = document.createElement('div');
+    grandEl.className = 'report-grand-total';
+    grandEl.textContent = `${t('total')}: ${(grandMinutes / 60).toFixed(1)} h / ${formatDuration(grandMinutes)}`;
+    container.appendChild(grandEl);
   } catch {}
 }
 
@@ -1154,15 +1233,8 @@ function exportReportPdf() {
     dateLabel = `${fmt(from)} — ${fmt(to)}`;
   }
 
-  const byCustomer = {};
-  reportData.forEach(e => {
-    const name = e.customer_name || e.customer;
-    if (!byCustomer[name]) byCustomer[name] = { entries: [], minutes: 0, customerId: e.customer_id };
-    byCustomer[name].entries.push(e);
-    byCustomer[name].minutes += e.minutes;
-  });
-
-  const getCustomerInfo = (custId) => customersList.find(c => c.id === custId) || {};
+  const mode = document.getElementById('report-groupby').value;
+  const blocks = buildReportBlocks(reportData, mode);
 
   const selectedCustomerId = document.getElementById('report-customer').value;
   const selectedCustomer = selectedCustomerId
@@ -1171,13 +1243,15 @@ function exportReportPdf() {
   const customerLabel = selectedCustomer ? selectedCustomer.name : t('allCustomers');
   const docTitle = `${customerLabel} - ${dateLabel}`;
 
+  const colHeader = mode === 'date' ? t('thCustomer') : t('thDate');
+
   let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(docTitle)}</title>
   <style>
     body { font-family: Arial, sans-serif; font-size: 11px; color: #222; margin: 20px; }
     .date-range { font-size: 12px; color: #666; margin-bottom: 16px; }
-    .customer-block { margin-bottom: 18px; page-break-inside: avoid; }
-    .customer-name { font-size: 13px; font-weight: bold; margin-bottom: 2px; }
-    .customer-info { font-size: 10px; color: #666; margin-bottom: 6px; }
+    .group-block { margin-bottom: 18px; page-break-inside: avoid; }
+    .group-title { font-size: 13px; font-weight: bold; margin-bottom: 2px; }
+    .group-info { font-size: 10px; color: #666; margin-bottom: 6px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
     th { text-align: left; border-bottom: 1px solid #ccc; padding: 3px 6px; font-size: 10px; color: #666; }
     td { padding: 3px 6px; border-bottom: 1px solid #eee; font-size: 11px; }
@@ -1187,26 +1261,30 @@ function exportReportPdf() {
     .grand-total { margin-top: 16px; font-size: 12px; font-weight: bold; border-top: 2px solid #333; padding-top: 6px; }
   </style></head><body>`;
 
-  html += `<div class="date-range">${dateLabel}</div>`;
+  html += `<div class="date-range">${esc(dateLabel)}</div>`;
 
   let grandMinutes = 0;
-  Object.keys(byCustomer).sort().forEach(name => {
-    const group = byCustomer[name];
-    const info = getCustomerInfo(group.customerId);
-    grandMinutes += group.minutes;
-    html += `<div class="customer-block"><div class="customer-name">${esc(name)}</div>`;
-    const parts = [];
-    if (info.contact_person) parts.push(info.contact_person);
-    if (info.email) parts.push(info.email);
-    if (info.phone) parts.push(info.phone);
-    const addrParts = [info.address, info.zip, info.city, info.country].filter(Boolean);
-    if (addrParts.length) parts.push(addrParts.join(', '));
-    if (parts.length) html += `<div class="customer-info">${esc(parts.join(' | '))}</div>`;
-    html += `<table><thead><tr><th>${t('thDate')}</th><th>${t('thFrom')}</th><th>${t('thTo')}</th><th>${t('thMinutes')}</th><th>${t('thDuration')}</th><th>${t('thDescription')}</th></tr></thead><tbody>`;
-    group.entries.sort((a, b) => a.date.localeCompare(b.date) || a.time_from.localeCompare(b.time_from)).forEach(e => {
-      html += `<tr><td>${e.date}</td><td>${e.time_from}</td><td>${e.time_to}</td><td>${e.minutes}</td><td class="dur">${formatDuration(e.minutes)}</td><td class="desc">${esc(e.description)}</td></tr>`;
+  blocks.forEach(block => {
+    grandMinutes += block.subtotalMinutes;
+    html += `<div class="group-block"><div class="group-title">${esc(block.title)}</div>`;
+
+    if (mode === 'customer') {
+      const info = customersList.find(c => c.id === block.customerId) || {};
+      const parts = [];
+      if (info.contact_person) parts.push(info.contact_person);
+      if (info.email) parts.push(info.email);
+      if (info.phone) parts.push(info.phone);
+      const addrParts = [info.address, info.zip, info.city, info.country].filter(Boolean);
+      if (addrParts.length) parts.push(addrParts.join(', '));
+      if (parts.length) html += `<div class="group-info">${esc(parts.join(' | '))}</div>`;
+    }
+
+    html += `<table><thead><tr><th>${colHeader}</th><th>${t('thFrom')}</th><th>${t('thTo')}</th><th>${t('thMinutes')}</th><th>${t('thDuration')}</th><th>${t('thDescription')}</th></tr></thead><tbody>`;
+    block.entries.forEach(e => {
+      const firstCol = mode === 'date' ? esc(e.customer_name || e.customer) : esc(e.date);
+      html += `<tr><td>${firstCol}</td><td>${esc(e.time_from)}</td><td>${esc(e.time_to)}</td><td>${e.minutes}</td><td class="dur">${formatDuration(e.minutes)}</td><td class="desc">${esc(e.description)}</td></tr>`;
     });
-    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${group.minutes}</td><td class="dur">${formatDuration(group.minutes)} / ${(group.minutes / 60).toFixed(1)} h</td><td></td></tr>`;
+    html += `<tr class="total-row"><td colspan="3">${t('total')}</td><td>${block.subtotalMinutes}</td><td class="dur">${formatDuration(block.subtotalMinutes)} / ${(block.subtotalMinutes / 60).toFixed(1)} h</td><td></td></tr>`;
     html += `</tbody></table></div>`;
   });
 

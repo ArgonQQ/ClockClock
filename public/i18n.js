@@ -145,6 +145,11 @@ const translations = {
     themeLight: 'Light',
     themeDark: 'Dark',
     themeTerminal: 'Terminal',
+
+    // Reports grouping
+    groupBy: 'Group by',
+    groupByCustomer: 'Group by Customer',
+    groupByDate: 'Group by Date',
   },
   de: {
     loginUser: 'Benutzername',
@@ -280,6 +285,11 @@ const translations = {
     themeLight: 'Hell',
     themeDark: 'Dunkel',
     themeTerminal: 'Terminal',
+
+    // Reports grouping
+    groupBy: 'Gruppieren nach',
+    groupByCustomer: 'Nach Kunde gruppieren',
+    groupByDate: 'Nach Datum gruppieren',
   }
 };
 
