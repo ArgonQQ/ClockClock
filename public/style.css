@@ -968,6 +968,42 @@ select.save-section-customer {
   .modal-content { padding: 1.25rem; }
 }
 
+/* === Report grouping === */
+#report-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.report-group { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.group-header {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.group-contact {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.subtotal-row td {
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+}
+
+.report-grand-total {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--border);
+}
+
 /* === PiP window styles === */
 .pip-body {
   font-family: 'DM Mono', monospace;

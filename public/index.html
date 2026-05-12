@@ -147,6 +147,10 @@
         <select id="report-user" style="display:none">
           <option value="" data-i18n="allUsers">All Users</option>
         </select>
+        <select id="report-groupby">
+          <option value="customer" data-i18n="groupByCustomer">Group by Customer</option>
+          <option value="date" data-i18n="groupByDate">Group by Date</option>
+        </select>
         <button data-i18n="exportPdf" onclick="exportReportPdf()">Export PDF</button>
       </div>
       <div class="report-cards">
@@ -154,19 +158,7 @@
         <div class="card"><div class="card-value" id="rpt-hours-fmt">0h</div><div class="card-label" data-i18n="totalHours">Total Hours</div></div>
         <div class="card"><div class="card-value" id="rpt-minutes">0</div><div class="card-label" data-i18n="totalMinutes">Total Minutes</div></div>
       </div>
-      <div class="table-wrap">
-        <table id="report-table">
-          <thead>
-            <tr>
-              <th data-i18n="thCustomer">Customer</th>
-              <th data-i18n="thEntries">Entries</th>
-              <th data-i18n="thDuration">Duration</th>
-              <th data-i18n="thHours">Hours</th>
-            </tr>
-          </thead>
-          <tbody id="report-body"></tbody>
-        </table>
-      </div>
+      <div id="report-blocks"></div>
     </section>
 
     <!-- Customers Tab -->
